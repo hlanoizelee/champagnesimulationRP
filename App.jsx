@@ -1,30 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, getDocs, addDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 
-// Données simulées
-const initialUsers = [
-  { id: 1, name: 'Jean Dupont', email: 'jean@csrp.fr', password: 'admin123', role: 'admin', createdAt: '2024-01-15' },
-  { id: 2, name: 'Marie Martin', email: 'marie@csrp.fr', password: 'marie123', role: 'reader', createdAt: '2024-02-20' },
-  { id: 3, name: 'Pierre Durand', email: 'pierre@csrp.fr', password: 'pierre123', role: 'reader', createdAt: '2024-03-10' },
-];
+// Configuration Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyCKa9t29e9B6GKUobgvc2t-ff1sech_18g",
+  authDomain: "champagne-simulation.firebaseapp.com",
+  projectId: "champagne-simulation",
+  storageBucket: "champagne-simulation.firebasestorage.app",
+  messagingSenderId: "403686403270",
+  appId: "1:403686403270:web:6f4642915344357ec9bbc7",
+  measurementId: "G-E0G3HRHT99"
+};
 
-const initialTransactions = [
-  { id: 1, date: '2024-12-01', type: 'income', category: 'Cotisations', description: 'Cotisations membres Q4', amount: 450 },
-  { id: 2, date: '2024-12-05', type: 'expense', category: 'Serveurs', description: 'Hébergement serveur Discord', amount: 29.99 },
-  { id: 3, date: '2024-12-10', type: 'income', category: 'Dons', description: 'Don anonyme', amount: 100 },
-  { id: 4, date: '2024-12-15', type: 'expense', category: 'Outils', description: 'Licence logiciel', amount: 49.99 },
-  { id: 5, date: '2025-01-02', type: 'income', category: 'Partenariats', description: 'Partenariat StreamCorp', amount: 200 },
-];
-
-const initialProjects = [
-  { id: 1, title: 'Refonte du règlement intérieur', status: 'in_progress', responsible: 'Jean Dupont', description: 'Mise à jour complète du RI avec les nouvelles procédures.', deadline: '2025-02-01', notes: 'En attente validation CA' },
-  { id: 2, title: 'Événement inter-associations', status: 'planning', responsible: 'Marie Martin', description: 'Organisation d\'un événement commun avec d\'autres associations de simulation.', deadline: '2025-03-15', notes: '' },
-  { id: 3, title: 'Nouveau système de grades', status: 'completed', responsible: 'Pierre Durand', description: 'Refonte complète de la hiérarchie des grades.', deadline: '2024-12-01', notes: 'Terminé et validé' },
-];
-
-const initialIdeas = [
-  { id: 1, title: 'Créer une chaîne YouTube', author: 'Marie Martin', date: '2025-01-05', description: 'Diffuser nos meilleures interventions et tutoriels.', votes: 5 },
-  { id: 2, title: 'Partenariat avec une école', author: 'Jean Dupont', date: '2025-01-08', description: 'Proposer des sessions découverte pour les étudiants.', votes: 3 },
-];
+// Initialiser Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 const statusLabels = {
   planning: 'En réflexion',
@@ -54,10 +45,11 @@ export default function ChampagneSimulationApp() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [users, setUsers] = useState(initialUsers);
-  const [transactions, setTransactions] = useState(initialTransactions);
-  const [projects, setProjects] = useState(initialProjects);
-  const [ideas, setIdeas] = useState(initialIdeas);
+  const [users, setUsers] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [ideas, setIdeas] = useState([]);
+  const [loading, setLoading] = useState(true);
   
   // États des modales
   const [showUserModal, setShowUserModal] = useState(false);
@@ -72,6 +64,50 @@ export default function ChampagneSimulationApp() {
   const [loginError, setLoginError] = useState('');
 
   const isAdmin = currentUser?.role === 'admin';
+
+  // Charger les données depuis Firebase
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // Charger les utilisateurs
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Si aucun utilisateur, créer l'admin par défaut
+        if (usersData.length === 0) {
+          const defaultAdmin = {
+            name: 'Administrateur',
+            email: 'admin@csrp.fr',
+            password: 'admin123',
+            role: 'admin',
+            createdAt: new Date().toISOString().split('T')[0]
+          };
+          const docRef = await addDoc(collection(db, 'users'), defaultAdmin);
+          usersData.push({ id: docRef.id, ...defaultAdmin });
+        }
+        setUsers(usersData);
+
+        // Charger les transactions
+        const transactionsSnapshot = await getDocs(collection(db, 'transactions'));
+        setTransactions(transactionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        // Charger les projets
+        const projectsSnapshot = await getDocs(collection(db, 'projects'));
+        setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        // Charger les idées
+        const ideasSnapshot = await getDocs(collection(db, 'ideas'));
+        setIdeas(ideasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        setLoading(false);
+      } catch (error) {
+        console.error('Erreur lors du chargement des données:', error);
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
 
   const handleLogin = () => {
     const user = users.find(u => u.email.toLowerCase() === loginEmail.toLowerCase().trim());
@@ -98,68 +134,137 @@ export default function ChampagneSimulationApp() {
 
   // Stats projets
   const projectsInProgress = projects.filter(p => p.status === 'in_progress').length;
-  const projectsCompleted = projects.filter(p => p.status === 'completed').length;
 
-  // CRUD Functions
-  const saveUser = (userData) => {
-    if (editingItem) {
-      setUsers(users.map(u => u.id === editingItem.id ? { ...userData, id: editingItem.id } : u));
-    } else {
-      setUsers([...users, { ...userData, id: Date.now(), createdAt: new Date().toISOString().split('T')[0] }]);
+  // CRUD Functions avec Firebase
+  const saveUser = async (userData) => {
+    try {
+      if (editingItem) {
+        await updateDoc(doc(db, 'users', editingItem.id), userData);
+        setUsers(users.map(u => u.id === editingItem.id ? { ...userData, id: editingItem.id } : u));
+      } else {
+        const newUser = { ...userData, createdAt: new Date().toISOString().split('T')[0] };
+        const docRef = await addDoc(collection(db, 'users'), newUser);
+        setUsers([...users, { id: docRef.id, ...newUser }]);
+      }
+      setShowUserModal(false);
+      setEditingItem(null);
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde:', error);
     }
-    setShowUserModal(false);
-    setEditingItem(null);
   };
 
-  const deleteUser = (id) => {
-    setUsers(users.filter(u => u.id !== id));
-  };
-
-  const saveTransaction = (transactionData) => {
-    if (editingItem) {
-      setTransactions(transactions.map(t => t.id === editingItem.id ? { ...transactionData, id: editingItem.id } : t));
-    } else {
-      setTransactions([...transactions, { ...transactionData, id: Date.now() }]);
+  const deleteUser = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'users', id));
+      setUsers(users.filter(u => u.id !== id));
+    } catch (error) {
+      console.error('Erreur lors de la suppression:', error);
     }
-    setShowTransactionModal(false);
-    setEditingItem(null);
   };
 
-  const deleteTransaction = (id) => {
-    setTransactions(transactions.filter(t => t.id !== id));
-  };
-
-  const saveProject = (projectData) => {
-    if (editingItem) {
-      setProjects(projects.map(p => p.id === editingItem.id ? { ...projectData, id: editingItem.id } : p));
-    } else {
-      setProjects([...projects, { ...projectData, id: Date.now() }]);
+  const saveTransaction = async (transactionData) => {
+    try {
+      if (editingItem) {
+        await updateDoc(doc(db, 'transactions', editingItem.id), transactionData);
+        setTransactions(transactions.map(t => t.id === editingItem.id ? { ...transactionData, id: editingItem.id } : t));
+      } else {
+        const docRef = await addDoc(collection(db, 'transactions'), transactionData);
+        setTransactions([...transactions, { id: docRef.id, ...transactionData }]);
+      }
+      setShowTransactionModal(false);
+      setEditingItem(null);
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde:', error);
     }
-    setShowProjectModal(false);
-    setEditingItem(null);
   };
 
-  const deleteProject = (id) => {
-    setProjects(projects.filter(p => p.id !== id));
-  };
-
-  const saveIdea = (ideaData) => {
-    if (editingItem) {
-      setIdeas(ideas.map(i => i.id === editingItem.id ? { ...ideaData, id: editingItem.id } : i));
-    } else {
-      setIdeas([...ideas, { ...ideaData, id: Date.now(), author: currentUser.name, date: new Date().toISOString().split('T')[0], votes: 0 }]);
+  const deleteTransaction = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'transactions', id));
+      setTransactions(transactions.filter(t => t.id !== id));
+    } catch (error) {
+      console.error('Erreur lors de la suppression:', error);
     }
-    setShowIdeaModal(false);
-    setEditingItem(null);
   };
 
-  const deleteIdea = (id) => {
-    setIdeas(ideas.filter(i => i.id !== id));
+  const saveProject = async (projectData) => {
+    try {
+      if (editingItem) {
+        await updateDoc(doc(db, 'projects', editingItem.id), projectData);
+        setProjects(projects.map(p => p.id === editingItem.id ? { ...projectData, id: editingItem.id } : p));
+      } else {
+        const docRef = await addDoc(collection(db, 'projects'), projectData);
+        setProjects([...projects, { id: docRef.id, ...projectData }]);
+      }
+      setShowProjectModal(false);
+      setEditingItem(null);
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde:', error);
+    }
   };
 
-  const voteIdea = (id) => {
-    setIdeas(ideas.map(i => i.id === id ? { ...i, votes: i.votes + 1 } : i));
+  const deleteProject = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'projects', id));
+      setProjects(projects.filter(p => p.id !== id));
+    } catch (error) {
+      console.error('Erreur lors de la suppression:', error);
+    }
   };
+
+  const saveIdea = async (ideaData) => {
+    try {
+      if (editingItem) {
+        await updateDoc(doc(db, 'ideas', editingItem.id), ideaData);
+        setIdeas(ideas.map(i => i.id === editingItem.id ? { ...ideaData, id: editingItem.id } : i));
+      } else {
+        const newIdea = { 
+          ...ideaData, 
+          author: currentUser.name, 
+          date: new Date().toISOString().split('T')[0], 
+          votes: 0 
+        };
+        const docRef = await addDoc(collection(db, 'ideas'), newIdea);
+        setIdeas([...ideas, { id: docRef.id, ...newIdea }]);
+      }
+      setShowIdeaModal(false);
+      setEditingItem(null);
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde:', error);
+    }
+  };
+
+  const deleteIdea = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'ideas', id));
+      setIdeas(ideas.filter(i => i.id !== id));
+    } catch (error) {
+      console.error('Erreur lors de la suppression:', error);
+    }
+  };
+
+  const voteIdea = async (id) => {
+    try {
+      const idea = ideas.find(i => i.id === id);
+      const newVotes = (idea.votes || 0) + 1;
+      await updateDoc(doc(db, 'ideas', id), { votes: newVotes });
+      setIdeas(ideas.map(i => i.id === id ? { ...i, votes: newVotes } : i));
+    } catch (error) {
+      console.error('Erreur lors du vote:', error);
+    }
+  };
+
+  // Écran de chargement
+  if (loading) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingCard}>
+          <div style={styles.spinner}></div>
+          <p style={styles.loadingText}>Chargement...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Page de connexion
   if (!isLoggedIn) {
@@ -314,6 +419,7 @@ export default function ChampagneSimulationApp() {
                         </span>
                       </div>
                     ))}
+                    {transactions.length === 0 && <p style={styles.emptyText}>Aucune transaction</p>}
                   </div>
                 </div>
 
@@ -327,6 +433,8 @@ export default function ChampagneSimulationApp() {
                         <span style={styles.miniListMeta}>{statusLabels[p.status]}</span>
                       </div>
                     ))}
+                    {projects.filter(p => p.status !== 'completed' && p.status !== 'abandoned').length === 0 && 
+                      <p style={styles.emptyText}>Aucun projet en cours</p>}
                   </div>
                 </div>
 
@@ -337,9 +445,10 @@ export default function ChampagneSimulationApp() {
                       <div key={i.id} style={styles.miniListItem}>
                         <span style={styles.ideaIcon}>💡</span>
                         <span style={styles.miniListText}>{i.title}</span>
-                        <span style={styles.votesBadge}>{i.votes} ❤️</span>
+                        <span style={styles.votesBadge}>{i.votes || 0} ❤️</span>
                       </div>
                     ))}
+                    {ideas.length === 0 && <p style={styles.emptyText}>Aucune idée</p>}
                   </div>
                 </div>
               </div>
@@ -408,13 +517,14 @@ export default function ChampagneSimulationApp() {
                         {isAdmin && (
                           <td style={styles.td}>
                             <button onClick={() => { setEditingItem(t); setShowTransactionModal(true); }} style={styles.editBtn}>✏️</button>
-                            <button onClick={(e) => { e.stopPropagation(); deleteTransaction(t.id); }} style={styles.deleteBtn}>🗑️</button>
+                            <button onClick={() => deleteTransaction(t.id)} style={styles.deleteBtn}>🗑️</button>
                           </td>
                         )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                {transactions.length === 0 && <p style={styles.emptyTableText}>Aucune transaction enregistrée</p>}
               </div>
             </div>
           )}
@@ -455,6 +565,7 @@ export default function ChampagneSimulationApp() {
                   </div>
                 ))}
               </div>
+              {projects.length === 0 && <p style={styles.emptyText}>Aucun projet enregistré</p>}
             </div>
           )}
 
@@ -469,7 +580,7 @@ export default function ChampagneSimulationApp() {
               </div>
 
               <div style={styles.ideasGrid}>
-                {ideas.sort((a, b) => b.votes - a.votes).map(i => (
+                {ideas.sort((a, b) => (b.votes || 0) - (a.votes || 0)).map(i => (
                   <div key={i.id} style={styles.ideaCard}>
                     <div style={styles.ideaHeader}>
                       <span style={styles.ideaAuthor}>💡 {i.author}</span>
@@ -485,12 +596,13 @@ export default function ChampagneSimulationApp() {
                     <div style={styles.ideaFooter}>
                       <span style={styles.ideaDate}>{new Date(i.date).toLocaleDateString('fr-FR')}</span>
                       <button onClick={() => voteIdea(i.id)} style={styles.voteButton}>
-                        ❤️ {i.votes}
+                        ❤️ {i.votes || 0}
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
+              {ideas.length === 0 && <p style={styles.emptyText}>Aucune idée proposée</p>}
             </div>
           )}
 
@@ -762,6 +874,33 @@ function IdeaForm({ initialData, onSave, onCancel }) {
 
 // Styles
 const styles = {
+  // Loading
+  loadingContainer: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%)',
+    fontFamily: "'Segoe UI', system-ui, sans-serif",
+  },
+  loadingCard: {
+    textAlign: 'center',
+    color: 'white',
+  },
+  spinner: {
+    width: '50px',
+    height: '50px',
+    border: '4px solid rgba(255,255,255,0.3)',
+    borderTop: '4px solid #7c3238',
+    borderRadius: '50%',
+    margin: '0 auto 20px',
+    animation: 'spin 1s linear infinite',
+  },
+  loadingText: {
+    fontSize: '18px',
+    opacity: 0.8,
+  },
+
   // Login
   loginContainer: {
     minHeight: '100vh',
@@ -1080,6 +1219,18 @@ const styles = {
   votesBadge: {
     fontSize: '12px',
     color: '#6b7280',
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#9ca3af',
+    fontSize: '14px',
+    padding: '20px',
+  },
+  emptyTableText: {
+    textAlign: 'center',
+    color: '#9ca3af',
+    fontSize: '14px',
+    padding: '40px',
   },
 
   // Tables
