@@ -1077,9 +1077,15 @@ function CommentForm({ project, onSave, onDelete, onClose, theme, currentUser, i
         <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Fermer</button>
         <button onClick={() => { if (text.trim()) onSave(text); }} disabled={!text.trim()} style={{ padding: '12px 20px', background: text.trim() ? 'linear-gradient(135deg, #7c3238, #9a3c44)' : '#ccc', color: 'white', border: 'none', borderRadius: 8, cursor: text.trim() ? 'pointer' : 'not-allowed', fontWeight: 600 }}>Envoyer</button>
       </div>
-    </div>
-  );
-} color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+    <div
+  style={{
+    width: '100%',
+    color: theme.text,
+    marginTop: 6,
+    boxSizing: 'border-box',
+  }}
+>
+</div>
         {!isEdit && <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Mot de passe</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>}
         {isEdit && <p style={{ fontSize: 13, color: theme.textSec, background: theme.input, padding: 12, borderRadius: 8 }}>ℹ️ Seul l'utilisateur peut modifier son mot de passe</p>}
         <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Rôle</label><select value={role} onChange={e => setRole(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="admin">Administrateur</option><option value="reader">Lecteur</option></select></div>
