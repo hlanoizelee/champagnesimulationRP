@@ -1079,7 +1079,7 @@ function CommentForm({ project, onSave, onDelete, onClose, theme, currentUser, i
       </div>
     </div>
   );
-}, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+}; color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
         {!isEdit && <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Mot de passe</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>}
         {isEdit && <p style={{ fontSize: 13, color: theme.textSec, background: theme.input, padding: 12, borderRadius: 8 }}>ℹ️ Seul l'utilisateur peut modifier son mot de passe</p>}
         <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Rôle</label><select value={role} onChange={e => setRole(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="admin">Administrateur</option><option value="reader">Lecteur</option></select></div>
