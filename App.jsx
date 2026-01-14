@@ -838,6 +838,266 @@ function TransactionForm({ data, onSave, onClose, categories, theme }) {
   const [category, setCategory] = useState(data?.category || 'Autre');
   const [description, setDescription] = useState(data?.description || '');
   const [amount, setAmount] = useState(data?.amount || '');
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const filteredCats = categories.filter(c => c.type === 'both' || c.type === type);
+  
+  const submit = async () => {
+    if (!description || !amount) return;
+    setUploading(true);
+    await onSave({ date, type, category, description, amount: parseFloat(amount), attachmentUrl: data?.attachmentUrl, attachmentName: data?.attachmentName }, file);
+    setUploading(false);
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Nouvelle'} transaction</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Date</label><input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Type</label><select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="income">Recette</option><option value="expense">Dépense</option></select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Catégorie</label><select value={category} onChange={e => setCategory(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}>{filteredCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Description</label><input value={description} onChange={e => setDescription(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Montant (€)</label><input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div>
+          <label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Pièce jointe</label>
+          {data?.attachmentUrl && <p style={{ fontSize: 12, color: theme.textSec, marginTop: 4 }}>Actuel : <a href={data.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ color: theme.primary }}>{data.attachmentName || 'Voir'}</a></p>}
+          <input type="file" onChange={e => setFile(e.target.files[0])} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} />
+          <p style={{ fontSize: 11, color: theme.textMut, marginTop: 4 }}>Formats acceptés : PDF, images, documents</p>
+        </div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} disabled={uploading} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, opacity: uploading ? 0.7 : 1 }}>{uploading ? 'Envoi...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecurringForm({ data, onSave, onClose, categories, theme }) {
+  const [type, setType] = useState(data?.type || 'expense');
+  const [category, setCategory] = useState(data?.category || 'Autre');
+  const [description, setDescription] = useState(data?.description || '');
+  const [amount, setAmount] = useState(data?.amount || '');
+  const [dayOfMonth, setDayOfMonth] = useState(data?.dayOfMonth || 1);
+  const [active, setActive] = useState(data?.active !== false);
+  const filteredCats = categories.filter(c => c.type === 'both' || c.type === type);
+  
+  const submit = () => {
+    if (!description || !amount) return;
+    onSave({ type, category, description, amount: parseFloat(amount), dayOfMonth: parseInt(dayOfMonth), active });
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Nouvelle'} récurrence</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Type</label><select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="income">Recette</option><option value="expense">Dépense</option></select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Catégorie</label><select value={category} onChange={e => setCategory(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}>{filteredCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Description</label><input value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Abonnement serveur" style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Montant (€)</label><input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Jour du mois</label><input type="number" min="1" max="28" value={dayOfMonth} onChange={e => setDayOfMonth(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /><p style={{ fontSize: 11, color: theme.textMut, marginTop: 4 }}>Entre 1 et 28 pour éviter les problèmes de fin de mois</p></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} id="active" />
+          <label htmlFor="active" style={{ fontSize: 14, color: theme.text }}>Activer cette récurrence</label>
+        </div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectForm({ data, onSave, onClose, theme }) {
+  const [title, setTitle] = useState(data?.title || '');
+  const [status, setStatus] = useState(data?.status || 'planning');
+  const [responsible, setResponsible] = useState(data?.responsible || '');
+  const [description, setDescription] = useState(data?.description || '');
+  const [deadline, setDeadline] = useState(data?.deadline || '');
+  const [notes, setNotes] = useState(data?.notes || '');
+  const submit = () => { if (!title || !responsible || !description) return; onSave({ title, status, responsible, description, deadline, notes }); };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Nouveau'} projet</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Titre</label><input value={title} onChange={e => setTitle(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Statut</label><select value={status} onChange={e => setStatus(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="planning">En réflexion</option><option value="in_progress">En cours</option><option value="completed">Terminé</option><option value="abandoned">Abandonné</option></select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Responsable</label><input value={responsible} onChange={e => setResponsible(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Description</label><textarea value={description} onChange={e => setDescription(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Échéance</label><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Notes</label><textarea value={notes} onChange={e => setNotes(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, minHeight: 60, resize: 'vertical', boxSizing: 'border-box' }} /></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IdeaForm({ data, onSave, onClose, theme }) {
+  const [title, setTitle] = useState(data?.title || '');
+  const [description, setDescription] = useState(data?.description || '');
+  const submit = () => { if (!title || !description) return; onSave({ title, description }); };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Proposer une'} idée</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Titre</label><input value={title} onChange={e => setTitle(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Description</label><textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Décrivez votre idée..." style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, minHeight: 100, resize: 'vertical', boxSizing: 'border-box' }} /></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Proposer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CategoryForm({ data, onSave, onClose, theme }) {
+  const [name, setName] = useState(data?.name || '');
+  const [color, setColor] = useState(data?.color || '#6b7280');
+  const [type, setType] = useState(data?.type || 'both');
+  const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#6b7280', '#14b8a6', '#f97316'];
+  const submit = () => { if (!name) return; onSave({ name, color, type }); };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Nouvelle'} catégorie</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Nom</label><input value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Couleur</label><div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>{colors.map(c => <button key={c} onClick={() => setColor(c)} style={{ width: 32, height: 32, borderRadius: 6, background: c, border: color === c ? '3px solid white' : 'none', boxShadow: color === c ? `0 0 0 2px ${theme.primary}` : 'none', cursor: 'pointer' }} />)}</div></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Type</label><select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="income">Recettes</option><option value="expense">Dépenses</option><option value="both">Les deux</option></select></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PasswordForm({ onSave, onClose, currentPwd, theme }) {
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [error, setError] = useState('');
+  const submit = () => {
+    if (oldPwd !== currentPwd) { setError('Ancien mot de passe incorrect'); return; }
+    if (newPwd.length < 6) { setError('Min 6 caractères'); return; }
+    if (newPwd !== confirmPwd) { setError('Les mots de passe ne correspondent pas'); return; }
+    onSave(newPwd);
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>Modifier mot de passe</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Ancien mot de passe</label><input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Nouveau mot de passe</label><input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Confirmer</label><input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        {error && <p style={{ color: '#dc2626', margin: 0 }}>{error}</p>}
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Modifier</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteAccountForm({ onConfirm, onClose, theme }) {
+  const [text, setText] = useState('');
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>Supprimer mon compte</h2>
+      <p style={{ color: '#dc2626', background: '#fef2f2', padding: 14, borderRadius: 8, marginBottom: 16 }}>⚠️ Cette action est irréversible !</p>
+      <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Tapez "SUPPRIMER" pour confirmer</label><input value={text} onChange={e => setText(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 20 }}>
+        <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+        <button onClick={onConfirm} disabled={text !== 'SUPPRIMER'} style={{ padding: '12px 20px', background: text === 'SUPPRIMER' ? 'linear-gradient(135deg, #dc2626, #ef4444)' : '#ccc', color: 'white', border: 'none', borderRadius: 8, cursor: text === 'SUPPRIMER' ? 'pointer' : 'not-allowed', fontWeight: 600 }}>Supprimer</button>
+      </div>
+    </div>
+  );
+}
+
+function DashboardSettingsForm({ widgets, onSave, onClose, theme }) {
+  const [localWidgets, setLocalWidgets] = useState([...widgets]);
+  const toggle = (id) => {
+    setLocalWidgets(localWidgets.map(w => w.id === id ? { ...w, enabled: !w.enabled } : w));
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>Personnaliser le tableau de bord</h2>
+      <p style={{ fontSize: 14, color: theme.textSec, marginBottom: 16 }}>Choisissez les éléments à afficher sur votre tableau de bord.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {localWidgets.map(w => (
+          <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: theme.input, borderRadius: 8 }}>
+            <input type="checkbox" checked={w.enabled} onChange={() => toggle(w.id)} id={w.id} />
+            <label htmlFor={w.id} style={{ fontSize: 14, color: theme.text, cursor: 'pointer' }}>{w.name}</label>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 20 }}>
+        <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+        <button onClick={() => { onSave(localWidgets); onClose(); }} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+      </div>
+    </div>
+  );
+}
+
+function CommentForm({ project, onSave, onDelete, onClose, theme, currentUser, isAdmin }) {
+  const [text, setText] = useState('');
+  const comments = project.comments || [];
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>Commentaires - {project.title}</h2>
+      <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 16 }}>
+        {comments.length === 0 && <p style={{ color: theme.textMut, textAlign: 'center', padding: 20 }}>Aucun commentaire</p>}
+        {comments.map(c => (
+          <div key={c.id} style={{ background: theme.input, padding: 12, borderRadius: 8, marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontWeight: 600, color: theme.text, fontSize: 14 }}>{c.author}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: theme.textMut, fontSize: 12 }}>{new Date(c.date).toLocaleDateString('fr-FR')}</span>
+                {(isAdmin || c.author === currentUser.name) && <button onClick={() => onDelete(c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, opacity: 0.7 }}>🗑️</button>}
+              </div>
+            </div>
+            <p style={{ color: theme.textSec, margin: 0, fontSize: 14, lineHeight: 1.5 }}>{c.text}</p>
+          </div>
+        ))}
+      </div>
+      <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Nouveau commentaire</label><textarea value={text} onChange={e => setText(e.target.value)} placeholder="Votre commentaire..." style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' }} /></div>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 16 }}>
+        <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Fermer</button>
+        <button onClick={() => { if (text.trim()) onSave(text); }} disabled={!text.trim()} style={{ padding: '12px 20px', background: text.trim() ? 'linear-gradient(135deg, #7c3238, #9a3c44)' : '#ccc', color: 'white', border: 'none', borderRadius: 8, cursor: text.trim() ? 'pointer' : 'not-allowed', fontWeight: 600 }}>Envoyer</button>
+      </div>
+    </div>
+  );
+}, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        {!isEdit && <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Mot de passe</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>}
+        {isEdit && <p style={{ fontSize: 13, color: theme.textSec, background: theme.input, padding: 12, borderRadius: 8 }}>ℹ️ Seul l'utilisateur peut modifier son mot de passe</p>}
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Rôle</label><select value={role} onChange={e => setRole(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="admin">Administrateur</option><option value="reader">Lecteur</option></select></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TransactionForm({ data, onSave, onClose, categories, theme }) {
+  const [date, setDate] = useState(data?.date || new Date().toISOString().split('T')[0]);
+  const [type, setType] = useState(data?.type || 'expense');
+  const [category, setCategory] = useState(data?.category || 'Autre');
+  const [description, setDescription] = useState(data?.description || '');
+  const [amount, setAmount] = useState(data?.amount || '');
 
   const filteredCats = categories.filter(c => c.type === 'both' || c.type === type);
 
@@ -988,6 +1248,93 @@ function DeleteAccountForm({ onConfirm, onClose, theme }) {
       <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 20 }}>
         <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
         <button onClick={onConfirm} disabled={text !== 'SUPPRIMER'} style={{ padding: '12px 20px', background: text === 'SUPPRIMER' ? 'linear-gradient(135deg, #dc2626, #ef4444)' : '#ccc', color: 'white', border: 'none', borderRadius: 8, cursor: text === 'SUPPRIMER' ? 'pointer' : 'not-allowed', fontWeight: 600 }}>Supprimer</button>
+      </div>
+    </div>
+  );
+}
+
+function RecurringForm({ data, onSave, onClose, categories, theme }) {
+  const [type, setType] = useState(data?.type || 'expense');
+  const [category, setCategory] = useState(data?.category || 'Autre');
+  const [description, setDescription] = useState(data?.description || '');
+  const [amount, setAmount] = useState(data?.amount || '');
+  const [dayOfMonth, setDayOfMonth] = useState(data?.dayOfMonth || 1);
+  const [active, setActive] = useState(data?.active !== false);
+
+  const filteredCats = categories.filter(c => c.type === 'both' || c.type === type);
+
+  const submit = () => {
+    if (!description || !amount) return;
+    onSave({ type, category, description, amount: parseFloat(amount), dayOfMonth, active });
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Nouvelle'} récurrence</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Type</label><select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="income">Recette</option><option value="expense">Dépense</option></select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Catégorie</label><select value={category} onChange={e => setCategory(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}>{filteredCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Description</label><input value={description} onChange={e => setDescription(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Montant (€)</label><input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Jour du mois (1-28)</label><input type="number" min="1" max="28" value={dayOfMonth} onChange={e => setDayOfMonth(parseInt(e.target.value))} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} /><label style={{ color: theme.text }}>Actif</label></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardSettingsForm({ widgets, onSave, onClose, theme }) {
+  const [w, setW] = useState([...widgets]);
+  const toggle = (id) => setW(w.map(x => x.id === id ? { ...x, enabled: !x.enabled } : x));
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>Personnaliser le tableau de bord</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {w.map(x => (
+          <div key={x.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: theme.input, borderRadius: 8 }}>
+            <input type="checkbox" checked={x.enabled} onChange={() => toggle(x.id)} />
+            <span style={{ color: theme.text }}>{x.name}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 20 }}>
+        <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+        <button onClick={() => { onSave(w); onClose(); }} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+      </div>
+    </div>
+  );
+}
+
+function CommentForm({ project, onSave, onDelete, onClose, theme, currentUser, isAdmin }) {
+  const [text, setText] = useState('');
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>Commentaires - {project.title}</h2>
+      <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 20 }}>
+        {(project.comments || []).map(c => (
+          <div key={c.id} style={{ background: theme.input, padding: 12, borderRadius: 8, marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontWeight: 600, color: theme.text }}>{c.author}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: theme.textMut }}>{new Date(c.date).toLocaleString('fr-FR')}</span>
+                {(isAdmin || c.author === currentUser.name) && <button onClick={() => onDelete(c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.7 }}>🗑️</button>}
+              </div>
+            </div>
+            <p style={{ color: theme.textSec, margin: 0 }}>{c.text}</p>
+          </div>
+        ))}
+        {(!project.comments || project.comments.length === 0) && <p style={{ color: theme.textMut, textAlign: 'center' }}>Aucun commentaire</p>}
+      </div>
+      <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Nouveau commentaire</label><textarea value={text} onChange={e => setText(e.target.value)} placeholder="Votre commentaire..." style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' }} /></div>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 16 }}>
+        <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Fermer</button>
+        <button onClick={() => { if (text.trim()) { onSave(text); setText(''); } }} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Envoyer</button>
       </div>
     </div>
   );
