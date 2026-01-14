@@ -13,38 +13,37 @@ const firebaseConfig = {
   measurementId: "G-E0G3HRHT99"
 };
 
-// Initialiser Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const statusLabels = {
-  planning: 'En réflexion',
-  in_progress: 'En cours',
-  completed: 'Terminé',
-  abandoned: 'Abandonné'
-};
+const statusLabels = { planning: 'En réflexion', in_progress: 'En cours', completed: 'Terminé', abandoned: 'Abandonné' };
+const statusColors = { planning: '#f59e0b', in_progress: '#3b82f6', completed: '#10b981', abandoned: '#6b7280' };
 
-const statusColors = {
-  planning: '#f59e0b',
-  in_progress: '#3b82f6',
-  completed: '#10b981',
-  abandoned: '#6b7280'
-};
+const defaultCategories = [
+  { id: 'cat1', name: 'Cotisations', color: '#10b981', type: 'income' },
+  { id: 'cat2', name: 'Dons', color: '#8b5cf6', type: 'income' },
+  { id: 'cat3', name: 'Partenariats', color: '#3b82f6', type: 'income' },
+  { id: 'cat4', name: 'Serveurs', color: '#ef4444', type: 'expense' },
+  { id: 'cat5', name: 'Outils', color: '#f59e0b', type: 'expense' },
+  { id: 'cat6', name: 'Événements', color: '#ec4899', type: 'both' },
+  { id: 'cat7', name: 'Autre', color: '#6b7280', type: 'both' },
+];
 
-const categoryColors = {
-  'Cotisations': '#10b981',
-  'Dons': '#8b5cf6',
-  'Partenariats': '#3b82f6',
-  'Serveurs': '#ef4444',
-  'Outils': '#f59e0b',
-  'Événements': '#ec4899',
-  'Autre': '#6b7280'
-};
-
-// Timeout d'inactivité (30 minutes)
 const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
 
-export default function ChampagneSimulationApp() {
+const lightTheme = {
+  primary: '#7c3238', bg: '#f8fafc', card: '#ffffff', sidebar: '#ffffff',
+  header: 'linear-gradient(135deg, #7c3238 0%, #5c2428 100%)',
+  input: '#f1f5f9', text: '#1f2937', textSec: '#4b5563', textMut: '#9ca3af', border: '#e5e7eb'
+};
+
+const darkTheme = {
+  primary: '#9a3c44', bg: '#0f172a', card: '#1e293b', sidebar: '#1e293b',
+  header: 'linear-gradient(135deg, #7c3238 0%, #5c2428 100%)',
+  input: '#334155', text: '#f1f5f9', textSec: '#94a3b8', textMut: '#64748b', border: '#334155'
+};
+
+export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -52,89 +51,84 @@ export default function ChampagneSimulationApp() {
   const [transactions, setTransactions] = useState([]);
   const [projects, setProjects] = useState([]);
   const [ideas, setIdeas] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [activityLog, setActivityLog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastActivity, setLastActivity] = useState(Date.now());
+  const [darkMode, setDarkMode] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
-  // États des modales
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [showTransactionModal, setShowTransactionModal] = useState(false);
-  const [showProjectModal, setShowProjectModal] = useState(false);
-  const [showIdeaModal, setShowIdeaModal] = useState(false);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmAction, setConfirmAction] = useState(null);
-  const [editingItem, setEditingItem] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
   
-  // Login
+  const [modal, setModal] = useState({ type: null, data: null });
+  const [confirmModal, setConfirmModal] = useState({ show: false, message: '', action: null });
+  
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  const theme = darkMode ? darkTheme : lightTheme;
   const isAdmin = currentUser?.role === 'admin';
 
-  // Gestion de l'inactivité
-  const updateActivity = useCallback(() => {
-    setLastActivity(Date.now());
-  }, []);
-
+  // Inactivité
+  const updateActivity = useCallback(() => setLastActivity(Date.now()), []);
+  
   useEffect(() => {
     if (!isLoggedIn) return;
-
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
-    events.forEach(event => window.addEventListener(event, updateActivity));
-
-    const checkInactivity = setInterval(() => {
+    events.forEach(e => window.addEventListener(e, updateActivity));
+    const interval = setInterval(() => {
       if (Date.now() - lastActivity > INACTIVITY_TIMEOUT) {
         handleLogout();
-        alert('Vous avez été déconnecté pour inactivité.');
+        alert('Déconnecté pour inactivité.');
       }
-    }, 60000); // Vérifier chaque minute
-
+    }, 60000);
     return () => {
-      events.forEach(event => window.removeEventListener(event, updateActivity));
-      clearInterval(checkInactivity);
+      events.forEach(e => window.removeEventListener(e, updateActivity));
+      clearInterval(interval);
     };
   }, [isLoggedIn, lastActivity, updateActivity]);
 
-  // Charger les données depuis Firebase
+  // Chargement données
   useEffect(() => {
-    const loadData = async () => {
+    const load = async () => {
       try {
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-        const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
+        let usersData = (await getDocs(collection(db, 'users'))).docs.map(d => ({ id: d.id, ...d.data() }));
         if (usersData.length === 0) {
-          const defaultAdmin = {
-            name: 'Administrateur',
-            email: 'admin@csrp.fr',
-            password: 'admin123',
-            role: 'admin',
-            createdAt: new Date().toISOString().split('T')[0]
-          };
-          const docRef = await addDoc(collection(db, 'users'), defaultAdmin);
-          usersData.push({ id: docRef.id, ...defaultAdmin });
+          const admin = { name: 'Administrateur', email: 'admin@csrp.fr', password: 'admin123', role: 'admin', createdAt: new Date().toISOString().split('T')[0] };
+          const ref = await addDoc(collection(db, 'users'), admin);
+          usersData = [{ id: ref.id, ...admin }];
         }
         setUsers(usersData);
-
-        const transactionsSnapshot = await getDocs(collection(db, 'transactions'));
-        setTransactions(transactionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-        const projectsSnapshot = await getDocs(collection(db, 'projects'));
-        setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-        const ideasSnapshot = await getDocs(collection(db, 'ideas'));
-        setIdeas(ideasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-        setLoading(false);
-      } catch (error) {
-        console.error('Erreur lors du chargement des données:', error);
-        setLoading(false);
-      }
+        setTransactions((await getDocs(collection(db, 'transactions'))).docs.map(d => ({ id: d.id, ...d.data() })));
+        setProjects((await getDocs(collection(db, 'projects'))).docs.map(d => ({ id: d.id, ...d.data() })));
+        setIdeas((await getDocs(collection(db, 'ideas'))).docs.map(d => ({ id: d.id, ...d.data() })));
+        
+        const catsSnap = await getDocs(collection(db, 'categories'));
+        setCategories(catsSnap.docs.length > 0 ? catsSnap.docs.map(d => ({ id: d.id, ...d.data() })) : defaultCategories);
+        
+        setActivityLog((await getDocs(collection(db, 'activityLog'))).docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+        
+        const saved = localStorage.getItem('darkMode');
+        if (saved) setDarkMode(JSON.parse(saved));
+      } catch (err) { console.error(err); }
+      setLoading(false);
     };
-
-    loadData();
+    load();
   }, []);
+
+  const logActivity = async (action, details) => {
+    if (!currentUser) return;
+    const entry = { action, details, userName: currentUser.name, timestamp: new Date().toISOString() };
+    try {
+      const ref = await addDoc(collection(db, 'activityLog'), entry);
+      setActivityLog(prev => [{ id: ref.id, ...entry }, ...prev]);
+    } catch (err) { console.error(err); }
+  };
 
   const handleLogin = () => {
     const user = users.find(u => u.email.toLowerCase() === loginEmail.toLowerCase().trim());
@@ -153,409 +147,360 @@ export default function ChampagneSimulationApp() {
     setCurrentUser(null);
     setLoginEmail('');
     setLoginPassword('');
+    setMobileMenuOpen(false);
   };
 
-  // Calculs financiers
-  const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const balance = totalIncome - totalExpense;
-
-  const projectsInProgress = projects.filter(p => p.status === 'in_progress').length;
-
-  // Fonction de confirmation
-  const showConfirm = (message, action) => {
-    setConfirmAction({ message, action });
-    setShowConfirmModal(true);
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+    localStorage.setItem('darkMode', JSON.stringify(!darkMode));
   };
 
-  const executeConfirm = () => {
-    if (confirmAction?.action) {
-      confirmAction.action();
-    }
-    setShowConfirmModal(false);
-    setConfirmAction(null);
-  };
+  const showConfirm = (message, action) => setConfirmModal({ show: true, message, action });
+  const execConfirm = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ show: false, message: '', action: null }); };
 
-  // CRUD Functions avec Firebase
-  const saveUser = async (userData) => {
+  // CRUD
+  const saveUser = async (data) => {
+    const exists = users.find(u => u.email.toLowerCase() === data.email.toLowerCase() && (!modal.data || u.id !== modal.data.id));
+    if (exists) { alert('Email déjà utilisé'); return; }
     try {
-      // Vérifier les doublons d'email
-      const existingUser = users.find(u => 
-        u.email.toLowerCase() === userData.email.toLowerCase() && 
-        (!editingItem || u.id !== editingItem.id)
-      );
-      if (existingUser) {
-        alert('Cet email est déjà utilisé par un autre utilisateur.');
-        return;
-      }
-
-      if (editingItem) {
-        // Ne pas modifier le mot de passe depuis ce formulaire
-        const updateData = { name: userData.name, email: userData.email, role: userData.role };
-        await updateDoc(doc(db, 'users', editingItem.id), updateData);
-        setUsers(users.map(u => u.id === editingItem.id ? { ...u, ...updateData } : u));
+      if (modal.data) {
+        await updateDoc(doc(db, 'users', modal.data.id), { name: data.name, email: data.email, role: data.role });
+        setUsers(users.map(u => u.id === modal.data.id ? { ...u, ...data } : u));
+        await logActivity('Modification utilisateur', data.name);
       } else {
-        const newUser = { ...userData, createdAt: new Date().toISOString().split('T')[0] };
-        const docRef = await addDoc(collection(db, 'users'), newUser);
-        setUsers([...users, { id: docRef.id, ...newUser }]);
+        const ref = await addDoc(collection(db, 'users'), { ...data, createdAt: new Date().toISOString().split('T')[0] });
+        setUsers([...users, { id: ref.id, ...data, createdAt: new Date().toISOString().split('T')[0] }]);
+        await logActivity('Création utilisateur', data.name);
       }
-      setShowUserModal(false);
-      setEditingItem(null);
-    } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
-    }
-  };
-
-  const updatePassword = async (newPassword) => {
-    try {
-      await updateDoc(doc(db, 'users', currentUser.id), { password: newPassword });
-      setUsers(users.map(u => u.id === currentUser.id ? { ...u, password: newPassword } : u));
-      setCurrentUser({ ...currentUser, password: newPassword });
-      setShowPasswordModal(false);
-      alert('Mot de passe modifié avec succès !');
-    } catch (error) {
-      console.error('Erreur lors de la modification du mot de passe:', error);
-    }
+      setModal({ type: null, data: null });
+    } catch (err) { console.error(err); }
   };
 
   const deleteUser = async (id) => {
-    try {
-      await deleteDoc(doc(db, 'users', id));
-      setUsers(users.filter(u => u.id !== id));
-    } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
-    }
+    const u = users.find(x => x.id === id);
+    await deleteDoc(doc(db, 'users', id));
+    setUsers(users.filter(x => x.id !== id));
+    await logActivity('Suppression utilisateur', u?.name);
+  };
+
+  const updatePassword = async (newPwd) => {
+    await updateDoc(doc(db, 'users', currentUser.id), { password: newPwd });
+    setUsers(users.map(u => u.id === currentUser.id ? { ...u, password: newPwd } : u));
+    setCurrentUser({ ...currentUser, password: newPwd });
+    setModal({ type: null, data: null });
+    alert('Mot de passe modifié !');
   };
 
   const deleteMyAccount = async () => {
-    try {
-      await deleteDoc(doc(db, 'users', currentUser.id));
-      setUsers(users.filter(u => u.id !== currentUser.id));
-      handleLogout();
-      alert('Votre compte a été supprimé.');
-    } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
-    }
+    await deleteDoc(doc(db, 'users', currentUser.id));
+    handleLogout();
+    alert('Compte supprimé.');
   };
 
-  const saveTransaction = async (transactionData) => {
+  const saveTransaction = async (data) => {
     try {
-      if (editingItem) {
-        await updateDoc(doc(db, 'transactions', editingItem.id), transactionData);
-        setTransactions(transactions.map(t => t.id === editingItem.id ? { ...transactionData, id: editingItem.id } : t));
+      if (modal.data) {
+        await updateDoc(doc(db, 'transactions', modal.data.id), data);
+        setTransactions(transactions.map(t => t.id === modal.data.id ? { ...data, id: modal.data.id } : t));
+        await logActivity('Modification transaction', `${data.description} - ${data.amount}€`);
       } else {
-        const docRef = await addDoc(collection(db, 'transactions'), transactionData);
-        setTransactions([...transactions, { id: docRef.id, ...transactionData }]);
+        const ref = await addDoc(collection(db, 'transactions'), data);
+        setTransactions([...transactions, { id: ref.id, ...data }]);
+        await logActivity('Nouvelle transaction', `${data.description} - ${data.amount}€`);
       }
-      setShowTransactionModal(false);
-      setEditingItem(null);
-    } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
-    }
+      setModal({ type: null, data: null });
+    } catch (err) { console.error(err); }
   };
 
   const deleteTransaction = async (id) => {
-    try {
-      await deleteDoc(doc(db, 'transactions', id));
-      setTransactions(transactions.filter(t => t.id !== id));
-    } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
-    }
+    const t = transactions.find(x => x.id === id);
+    await deleteDoc(doc(db, 'transactions', id));
+    setTransactions(transactions.filter(x => x.id !== id));
+    await logActivity('Suppression transaction', t?.description);
   };
 
-  const saveProject = async (projectData) => {
+  const saveProject = async (data) => {
     try {
-      if (editingItem) {
-        await updateDoc(doc(db, 'projects', editingItem.id), projectData);
-        setProjects(projects.map(p => p.id === editingItem.id ? { ...projectData, id: editingItem.id } : p));
+      if (modal.data) {
+        await updateDoc(doc(db, 'projects', modal.data.id), data);
+        setProjects(projects.map(p => p.id === modal.data.id ? { ...data, id: modal.data.id } : p));
+        await logActivity('Modification projet', data.title);
       } else {
-        const docRef = await addDoc(collection(db, 'projects'), projectData);
-        setProjects([...projects, { id: docRef.id, ...projectData }]);
+        const ref = await addDoc(collection(db, 'projects'), data);
+        setProjects([...projects, { id: ref.id, ...data }]);
+        await logActivity('Nouveau projet', data.title);
       }
-      setShowProjectModal(false);
-      setEditingItem(null);
-    } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
-    }
+      setModal({ type: null, data: null });
+    } catch (err) { console.error(err); }
   };
 
   const deleteProject = async (id) => {
-    try {
-      await deleteDoc(doc(db, 'projects', id));
-      setProjects(projects.filter(p => p.id !== id));
-    } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
-    }
+    const p = projects.find(x => x.id === id);
+    await deleteDoc(doc(db, 'projects', id));
+    setProjects(projects.filter(x => x.id !== id));
+    await logActivity('Suppression projet', p?.title);
   };
 
-  const saveIdea = async (ideaData) => {
+  const saveIdea = async (data) => {
     try {
-      if (editingItem) {
-        await updateDoc(doc(db, 'ideas', editingItem.id), ideaData);
-        setIdeas(ideas.map(i => i.id === editingItem.id ? { ...ideaData, id: editingItem.id } : i));
+      if (modal.data) {
+        await updateDoc(doc(db, 'ideas', modal.data.id), data);
+        setIdeas(ideas.map(i => i.id === modal.data.id ? { ...data, id: modal.data.id } : i));
+        await logActivity('Modification idée', data.title);
       } else {
-        const newIdea = { 
-          ...ideaData, 
-          author: currentUser.name, 
-          date: new Date().toISOString().split('T')[0], 
-          votes: 0 
-        };
-        const docRef = await addDoc(collection(db, 'ideas'), newIdea);
-        setIdeas([...ideas, { id: docRef.id, ...newIdea }]);
+        const newIdea = { ...data, author: currentUser.name, date: new Date().toISOString().split('T')[0], votes: 0 };
+        const ref = await addDoc(collection(db, 'ideas'), newIdea);
+        setIdeas([...ideas, { id: ref.id, ...newIdea }]);
+        await logActivity('Nouvelle idée', data.title);
       }
-      setShowIdeaModal(false);
-      setEditingItem(null);
-    } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
-    }
+      setModal({ type: null, data: null });
+    } catch (err) { console.error(err); }
   };
 
   const deleteIdea = async (id) => {
-    try {
-      await deleteDoc(doc(db, 'ideas', id));
-      setIdeas(ideas.filter(i => i.id !== id));
-    } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
-    }
+    const i = ideas.find(x => x.id === id);
+    await deleteDoc(doc(db, 'ideas', id));
+    setIdeas(ideas.filter(x => x.id !== id));
+    await logActivity('Suppression idée', i?.title);
   };
 
   const voteIdea = async (id) => {
+    const idea = ideas.find(i => i.id === id);
+    const newVotes = (idea.votes || 0) + 1;
+    await updateDoc(doc(db, 'ideas', id), { votes: newVotes });
+    setIdeas(ideas.map(i => i.id === id ? { ...i, votes: newVotes } : i));
+  };
+
+  const saveCategory = async (data) => {
     try {
-      const idea = ideas.find(i => i.id === id);
-      const newVotes = (idea.votes || 0) + 1;
-      await updateDoc(doc(db, 'ideas', id), { votes: newVotes });
-      setIdeas(ideas.map(i => i.id === id ? { ...i, votes: newVotes } : i));
-    } catch (error) {
-      console.error('Erreur lors du vote:', error);
+      if (modal.data?.id && !modal.data.id.startsWith('cat')) {
+        await updateDoc(doc(db, 'categories', modal.data.id), data);
+        setCategories(categories.map(c => c.id === modal.data.id ? { ...data, id: modal.data.id } : c));
+        await logActivity('Modification catégorie', data.name);
+      } else {
+        const ref = await addDoc(collection(db, 'categories'), data);
+        setCategories([...categories, { id: ref.id, ...data }]);
+        await logActivity('Nouvelle catégorie', data.name);
+      }
+      setModal({ type: null, data: null });
+    } catch (err) { console.error(err); }
+  };
+
+  const deleteCategory = async (id) => {
+    if (id.startsWith('cat')) {
+      setCategories(categories.filter(c => c.id !== id));
+    } else {
+      const c = categories.find(x => x.id === id);
+      await deleteDoc(doc(db, 'categories', id));
+      setCategories(categories.filter(x => x.id !== id));
+      await logActivity('Suppression catégorie', c?.name);
     }
   };
 
-  // Export CSV
-  const exportTransactionsCSV = () => {
-    const headers = ['Date', 'Type', 'Catégorie', 'Description', 'Montant'];
-    const rows = transactions
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .map(t => [
-        new Date(t.date).toLocaleDateString('fr-FR'),
-        t.type === 'income' ? 'Recette' : 'Dépense',
-        t.category,
-        t.description,
-        (t.type === 'income' ? '+' : '-') + t.amount.toFixed(2) + ' €'
-      ]);
-    
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(';'))
-      .join('\n');
-    
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const exportCSV = () => {
+    const rows = [['Date', 'Type', 'Catégorie', 'Description', 'Montant']];
+    filteredTransactions.forEach(t => {
+      rows.push([new Date(t.date).toLocaleDateString('fr-FR'), t.type === 'income' ? 'Recette' : 'Dépense', t.category, t.description, `${t.type === 'income' ? '+' : '-'}${t.amount.toFixed(2)}€`]);
+    });
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(';')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `transactions_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
 
-  // Écran de chargement
-  if (loading) {
-    return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.loadingCard}>
-          <div style={styles.spinner}></div>
-          <p style={styles.loadingText}>Chargement...</p>
-        </div>
-      </div>
-    );
-  }
+  // Filtres
+  const filteredTransactions = transactions.filter(t => {
+    if (filterType !== 'all' && t.type !== filterType) return false;
+    if (filterCategory !== 'all' && t.category !== filterCategory) return false;
+    if (filterDateFrom && t.date < filterDateFrom) return false;
+    if (filterDateTo && t.date > filterDateTo) return false;
+    if (searchTerm && !t.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    return true;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Page de connexion
-  if (!isLoggedIn) {
-    return (
-      <div style={styles.loginContainer}>
-        <div style={styles.loginCard}>
-          <div style={styles.loginLogo}>
-            <div style={styles.logoText}>
-              <span style={styles.logoC}>C</span>HAMPAGNE
-            </div>
-            <div style={styles.logoSimulation}>SIMULATION</div>
-          </div>
-          <h2 style={styles.loginTitle}>Espace Administration</h2>
-          <div style={styles.loginForm}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Email</label>
-              <input
-                type="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                style={styles.input}
-                placeholder="votre@email.fr"
-              />
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Mot de passe</label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                style={styles.input}
-                placeholder="••••••••"
-              />
-            </div>
-            {loginError && <p style={styles.error}>{loginError}</p>}
-            <button type="button" onClick={handleLogin} style={styles.loginButton}>Se connecter</button>
-          </div>
-          <p style={styles.hint}>Contactez un administrateur pour obtenir vos accès</p>
-          <p style={styles.rgpdText}>
-            En vous connectant, vous acceptez que vos données (nom, email) soient stockées 
-            pour la gestion interne de l'association Champagne Simulation.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const filteredProjects = projects.filter(p => !searchTerm || p.title.toLowerCase().includes(searchTerm.toLowerCase()) || p.description?.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredIdeas = ideas.filter(i => !searchTerm || i.title.toLowerCase().includes(searchTerm.toLowerCase()) || i.description?.toLowerCase().includes(searchTerm.toLowerCase()));
 
+  // Stats
+  const totalIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const balance = totalIncome - totalExpense;
+  const projectsInProgress = projects.filter(p => p.status === 'in_progress').length;
+
+  // Graphique data
+  const getChartData = () => {
+    const data = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const month = d.toLocaleDateString('fr-FR', { month: 'short' });
+      const year = d.getFullYear();
+      const key = `${year}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const income = transactions.filter(t => t.type === 'income' && t.date?.startsWith(key)).reduce((s, t) => s + t.amount, 0);
+      const expense = transactions.filter(t => t.type === 'expense' && t.date?.startsWith(key)).reduce((s, t) => s + t.amount, 0);
+      data.push({ month, income, expense });
+    }
+    return data;
+  };
+
+  const resetFilters = () => { setSearchTerm(''); setFilterType('all'); setFilterCategory('all'); setFilterDateFrom(''); setFilterDateTo(''); };
+
+  // Loading
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: theme.bg }}>
+      <p style={{ color: theme.text }}>Chargement...</p>
+    </div>
+  );
+
+  // Login
+  if (!isLoggedIn) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)', padding: 20 }}>
+      <div style={{ background: theme.card, borderRadius: 20, padding: 40, width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ textAlign: 'center', marginBottom: 30 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: theme.primary }}><span style={{ fontSize: 34 }}>C</span>HAMPAGNE</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: theme.primary, letterSpacing: 6 }}>SIMULATION</div>
+        </div>
+        <h2 style={{ textAlign: 'center', color: theme.text, fontSize: 18, marginBottom: 30 }}>Espace Administration</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Email</label>
+            <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              style={{ width: '100%', padding: 14, borderRadius: 10, border: `2px solid ${theme.border}`, fontSize: 15, marginTop: 6, background: theme.input, color: theme.text, boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Mot de passe</label>
+            <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              style={{ width: '100%', padding: 14, borderRadius: 10, border: `2px solid ${theme.border}`, fontSize: 15, marginTop: 6, background: theme.input, color: theme.text, boxSizing: 'border-box' }} />
+          </div>
+          {loginError && <p style={{ color: '#dc2626', textAlign: 'center', margin: 0 }}>{loginError}</p>}
+          <button onClick={handleLogin} style={{ padding: 16, background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: 600, cursor: 'pointer', marginTop: 10 }}>Se connecter</button>
+        </div>
+        <p style={{ marginTop: 20, fontSize: 12, color: theme.textMut, textAlign: 'center' }}>Contactez un administrateur pour obtenir vos accès</p>
+        <p style={{ marginTop: 12, fontSize: 11, color: theme.textMut, textAlign: 'center', background: theme.input, padding: 12, borderRadius: 8 }}>
+          En vous connectant, vous acceptez que vos données soient stockées pour la gestion interne de l'association.
+        </p>
+        <button onClick={toggleDarkMode} style={{ marginTop: 16, background: 'none', border: 'none', color: theme.textMut, cursor: 'pointer', width: '100%' }}>
+          {darkMode ? '☀️ Mode clair' : '🌙 Mode sombre'}
+        </button>
+      </div>
+    </div>
+  );
+
+  // App principale
   return (
-    <div style={styles.app}>
+    <div style={{ minHeight: '100vh', background: theme.bg, fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
       {/* Header */}
-      <header style={styles.header}>
-        <div style={styles.headerLeft}>
-          <div style={styles.headerLogo}>
-            <span style={styles.headerLogoC}>C</span>HAMPAGNE
-            <span style={styles.headerLogoSim}> SIMULATION</span>
-          </div>
+      <header style={{ background: theme.header, color: 'white', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={{ display: 'none', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: 22, padding: '6px 10px', borderRadius: 6, cursor: 'pointer' }} className="mobile-menu-btn">☰</button>
+          <div style={{ fontSize: 18, fontWeight: 800 }}><span style={{ fontSize: 22 }}>C</span>HAMPAGNE <span style={{ fontWeight: 600, opacity: 0.9 }}>SIMULATION</span></div>
         </div>
-        <div style={styles.headerRight}>
-          <div style={styles.userInfo}>
-            <span style={styles.userName}>{currentUser.name}</span>
-            <span style={styles.userRole}>{currentUser.role === 'admin' ? 'Administrateur' : 'Lecteur'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="user-info-desktop" style={{ textAlign: 'right', marginRight: 8 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{currentUser.name}</div>
+            <div style={{ fontSize: 11, opacity: 0.8 }}>{isAdmin ? 'Administrateur' : 'Lecteur'}</div>
           </div>
-          <button onClick={() => setShowPasswordModal(true)} style={styles.headerButton} title="Modifier mon mot de passe">🔑</button>
-          <button onClick={() => setShowDeleteAccountModal(true)} style={styles.headerButtonDanger} title="Supprimer mon compte">🗑️</button>
-          <button onClick={handleLogout} style={styles.logoutButton}>Déconnexion</button>
+          <button onClick={toggleDarkMode} style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', borderRadius: 6, cursor: 'pointer' }}>{darkMode ? '☀️' : '🌙'}</button>
+          <button onClick={() => setModal({ type: 'password', data: null })} style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', borderRadius: 6, cursor: 'pointer' }}>🔑</button>
+          <button onClick={() => setModal({ type: 'deleteAccount', data: null })} style={{ padding: '6px 10px', background: 'rgba(239,68,68,0.3)', border: 'none', color: 'white', borderRadius: 6, cursor: 'pointer' }}>🗑️</button>
+          <button onClick={handleLogout} style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>Déconnexion</button>
         </div>
       </header>
 
-      <div style={styles.container}>
+      <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
         {/* Sidebar */}
-        <nav style={styles.sidebar}>
-          <button 
-            onClick={() => setActiveTab('dashboard')} 
-            style={{...styles.navButton, ...(activeTab === 'dashboard' ? styles.navButtonActive : {})}}
-          >
-            <span style={styles.navIcon}>📊</span> Tableau de bord
-          </button>
-          <button 
-            onClick={() => setActiveTab('finances')} 
-            style={{...styles.navButton, ...(activeTab === 'finances' ? styles.navButtonActive : {})}}
-          >
-            <span style={styles.navIcon}>💰</span> Finances
-          </button>
-          <button 
-            onClick={() => setActiveTab('projects')} 
-            style={{...styles.navButton, ...(activeTab === 'projects' ? styles.navButtonActive : {})}}
-          >
-            <span style={styles.navIcon}>📁</span> Projets
-          </button>
-          <button 
-            onClick={() => setActiveTab('ideas')} 
-            style={{...styles.navButton, ...(activeTab === 'ideas' ? styles.navButtonActive : {})}}
-          >
-            <span style={styles.navIcon}>💡</span> Boîte à idées
-          </button>
-          {isAdmin && (
-            <button 
-              onClick={() => setActiveTab('users')} 
-              style={{...styles.navButton, ...(activeTab === 'users' ? styles.navButtonActive : {})}}
-            >
-              <span style={styles.navIcon}>👥</span> Utilisateurs
+        <nav className={`sidebar ${mobileMenuOpen ? 'open' : ''}`} style={{ width: 220, background: theme.sidebar, borderRight: `1px solid ${theme.border}`, padding: '16px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {[
+            { id: 'dashboard', icon: '📊', label: 'Tableau de bord' },
+            { id: 'finances', icon: '💰', label: 'Finances' },
+            { id: 'projects', icon: '📁', label: 'Projets' },
+            { id: 'ideas', icon: '💡', label: 'Boîte à idées' },
+            ...(isAdmin ? [
+              { id: 'users', icon: '👥', label: 'Utilisateurs' },
+              { id: 'categories', icon: '🏷️', label: 'Catégories' },
+              { id: 'history', icon: '📜', label: 'Historique' }
+            ] : [])
+          ].map(item => (
+            <button key={item.id} onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); setSearchTerm(''); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: activeTab === item.id ? 'linear-gradient(135deg, #7c3238, #9a3c44)' : 'transparent', 
+                color: activeTab === item.id ? 'white' : theme.text, border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500, textAlign: 'left', width: '100%' }}>
+              <span>{item.icon}</span> {item.label}
             </button>
-          )}
+          ))}
         </nav>
+        {mobileMenuOpen && <div onClick={() => setMobileMenuOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50 }} />}
 
-        {/* Main Content */}
-        <main style={styles.main}>
+        {/* Main */}
+        <main style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
           {/* Dashboard */}
           {activeTab === 'dashboard' && (
-            <div style={styles.dashboard}>
-              <h1 style={styles.pageTitle}>Tableau de bord</h1>
+            <div>
+              <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.text, marginBottom: 24 }}>Tableau de bord</h1>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+                {[
+                  { label: 'Solde actuel', value: `${balance.toFixed(2)} €`, icon: '💶', color: theme.primary },
+                  { label: 'Total recettes', value: `${totalIncome.toFixed(2)} €`, icon: '📈', color: '#10b981' },
+                  { label: 'Total dépenses', value: `${totalExpense.toFixed(2)} €`, icon: '📉', color: '#ef4444' },
+                  { label: 'Projets en cours', value: projectsInProgress, icon: '🚀', color: '#3b82f6' }
+                ].map((stat, i) => (
+                  <div key={i} style={{ background: theme.card, borderRadius: 12, padding: 20, display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${theme.border}`, borderLeftWidth: 4, borderLeftColor: stat.color }}>
+                    <span style={{ fontSize: 28 }}>{stat.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 12, color: theme.textSec }}>{stat.label}</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: theme.text }}>{stat.value}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
               
-              <div style={styles.statsGrid}>
-                <div style={{...styles.statCard, ...styles.statCardBalance}}>
-                  <div style={styles.statIcon}>💶</div>
-                  <div style={styles.statContent}>
-                    <span style={styles.statLabel}>Solde actuel</span>
-                    <span style={styles.statValue}>{balance.toFixed(2)} €</span>
-                  </div>
+              {/* Graphique */}
+              <div style={{ background: theme.card, borderRadius: 12, padding: 20, marginBottom: 24, border: `1px solid ${theme.border}` }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600, color: theme.text, marginBottom: 16 }}>Évolution (6 derniers mois)</h3>
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', height: 180, gap: 8 }}>
+                  {getChartData().map((d, i) => {
+                    const max = Math.max(...getChartData().map(x => Math.max(x.income, x.expense)), 1);
+                    return (
+                      <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 140 }}>
+                          <div style={{ width: 20, background: '#10b981', borderRadius: '4px 4px 0 0', height: `${(d.income / max) * 100}%`, minHeight: d.income > 0 ? 4 : 0 }} title={`Recettes: ${d.income.toFixed(2)}€`} />
+                          <div style={{ width: 20, background: '#ef4444', borderRadius: '4px 4px 0 0', height: `${(d.expense / max) * 100}%`, minHeight: d.expense > 0 ? 4 : 0 }} title={`Dépenses: ${d.expense.toFixed(2)}€`} />
+                        </div>
+                        <span style={{ fontSize: 11, color: theme.textMut, marginTop: 8 }}>{d.month}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div style={{...styles.statCard, ...styles.statCardIncome}}>
-                  <div style={styles.statIcon}>📈</div>
-                  <div style={styles.statContent}>
-                    <span style={styles.statLabel}>Total recettes</span>
-                    <span style={styles.statValue}>{totalIncome.toFixed(2)} €</span>
-                  </div>
-                </div>
-                <div style={{...styles.statCard, ...styles.statCardExpense}}>
-                  <div style={styles.statIcon}>📉</div>
-                  <div style={styles.statContent}>
-                    <span style={styles.statLabel}>Total dépenses</span>
-                    <span style={styles.statValue}>{totalExpense.toFixed(2)} €</span>
-                  </div>
-                </div>
-                <div style={{...styles.statCard, ...styles.statCardProjects}}>
-                  <div style={styles.statIcon}>🚀</div>
-                  <div style={styles.statContent}>
-                    <span style={styles.statLabel}>Projets en cours</span>
-                    <span style={styles.statValue}>{projectsInProgress}</span>
-                  </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 12 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: theme.textSec }}><span style={{ width: 12, height: 12, background: '#10b981', borderRadius: 3 }} /> Recettes</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: theme.textSec }}><span style={{ width: 12, height: 12, background: '#ef4444', borderRadius: 3 }} /> Dépenses</span>
                 </div>
               </div>
 
-              <div style={styles.dashboardGrid}>
-                <div style={styles.dashboardCard}>
-                  <h3 style={styles.cardTitle}>Dernières transactions</h3>
-                  <div style={styles.miniList}>
-                    {transactions.slice(-5).reverse().map(t => (
-                      <div key={t.id} style={styles.miniListItem}>
-                        <span style={{...styles.transactionBadge, backgroundColor: t.type === 'income' ? '#10b981' : '#ef4444'}}>
-                          {t.type === 'income' ? '+' : '-'}
-                        </span>
-                        <span style={styles.miniListText}>{t.description}</span>
-                        <span style={{...styles.miniListAmount, color: t.type === 'income' ? '#10b981' : '#ef4444'}}>
-                          {t.type === 'income' ? '+' : '-'}{t.amount.toFixed(2)} €
-                        </span>
-                      </div>
-                    ))}
-                    {transactions.length === 0 && <p style={styles.emptyText}>Aucune transaction</p>}
-                  </div>
+              {/* Résumés */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+                <div style={{ background: theme.card, borderRadius: 12, padding: 20, border: `1px solid ${theme.border}` }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, color: theme.text, marginBottom: 14, paddingBottom: 10, borderBottom: `2px solid ${theme.border}` }}>Dernières transactions</h3>
+                  {transactions.slice(-5).reverse().map(t => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, background: theme.input, borderRadius: 6, marginBottom: 8 }}>
+                      <span style={{ width: 24, height: 24, borderRadius: 4, background: t.type === 'income' ? '#10b981' : '#ef4444', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>{t.type === 'income' ? '+' : '-'}</span>
+                      <span style={{ flex: 1, fontSize: 14, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description}</span>
+                      <span style={{ fontWeight: 600, color: t.type === 'income' ? '#10b981' : '#ef4444', fontSize: 14 }}>{t.type === 'income' ? '+' : '-'}{t.amount?.toFixed(2)}€</span>
+                    </div>
+                  ))}
+                  {transactions.length === 0 && <p style={{ color: theme.textMut, textAlign: 'center', padding: 20 }}>Aucune transaction</p>}
                 </div>
-
-                <div style={styles.dashboardCard}>
-                  <h3 style={styles.cardTitle}>Projets en cours</h3>
-                  <div style={styles.miniList}>
-                    {projects.filter(p => p.status !== 'completed' && p.status !== 'abandoned').map(p => (
-                      <div key={p.id} style={styles.miniListItem}>
-                        <span style={{...styles.statusDot, backgroundColor: statusColors[p.status]}}></span>
-                        <span style={styles.miniListText}>{p.title}</span>
-                        <span style={styles.miniListMeta}>{statusLabels[p.status]}</span>
-                      </div>
-                    ))}
-                    {projects.filter(p => p.status !== 'completed' && p.status !== 'abandoned').length === 0 && 
-                      <p style={styles.emptyText}>Aucun projet en cours</p>}
-                  </div>
-                </div>
-
-                <div style={styles.dashboardCard}>
-                  <h3 style={styles.cardTitle}>Dernières idées</h3>
-                  <div style={styles.miniList}>
-                    {ideas.slice(-3).reverse().map(i => (
-                      <div key={i.id} style={styles.miniListItem}>
-                        <span style={styles.ideaIcon}>💡</span>
-                        <span style={styles.miniListText}>{i.title}</span>
-                        <span style={styles.votesBadge}>{i.votes || 0} ❤️</span>
-                      </div>
-                    ))}
-                    {ideas.length === 0 && <p style={styles.emptyText}>Aucune idée</p>}
-                  </div>
+                <div style={{ background: theme.card, borderRadius: 12, padding: 20, border: `1px solid ${theme.border}` }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, color: theme.text, marginBottom: 14, paddingBottom: 10, borderBottom: `2px solid ${theme.border}` }}>Projets en cours</h3>
+                  {projects.filter(p => p.status === 'in_progress' || p.status === 'planning').slice(0, 5).map(p => (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, background: theme.input, borderRadius: 6, marginBottom: 8 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: statusColors[p.status] }} />
+                      <span style={{ flex: 1, fontSize: 14, color: theme.text }}>{p.title}</span>
+                      <span style={{ fontSize: 12, color: theme.textMut }}>{statusLabels[p.status]}</span>
+                    </div>
+                  ))}
+                  {projects.filter(p => p.status === 'in_progress' || p.status === 'planning').length === 0 && <p style={{ color: theme.textMut, textAlign: 'center', padding: 20 }}>Aucun projet en cours</p>}
                 </div>
               </div>
             </div>
@@ -564,203 +509,251 @@ export default function ChampagneSimulationApp() {
           {/* Finances */}
           {activeTab === 'finances' && (
             <div>
-              <div style={styles.pageHeader}>
-                <h1 style={styles.pageTitle}>Gestion des finances</h1>
-                <div style={styles.headerActions}>
-                  <button onClick={exportTransactionsCSV} style={styles.exportButton}>
-                    📥 Exporter CSV
-                  </button>
-                  {isAdmin && (
-                    <button onClick={() => { setEditingItem(null); setShowTransactionModal(true); }} style={styles.addButton}>
-                      + Nouvelle transaction
-                    </button>
-                  )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.text }}>Finances</h1>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button onClick={exportCSV} style={{ padding: '10px 16px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>📥 Exporter CSV</button>
+                  {isAdmin && <button onClick={() => setModal({ type: 'transaction', data: null })} style={{ padding: '10px 16px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Nouvelle transaction</button>}
                 </div>
               </div>
 
-              <div style={styles.financesSummary}>
-                <div style={styles.summaryItem}>
-                  <span style={styles.summaryLabel}>Recettes</span>
-                  <span style={{...styles.summaryValue, color: '#10b981'}}>{totalIncome.toFixed(2)} €</span>
+              {/* Filtres */}
+              <div style={{ background: theme.card, borderRadius: 12, padding: 16, marginBottom: 20, border: `1px solid ${theme.border}` }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
+                    <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                      style={{ width: '100%', padding: '10px 10px 10px 38px', borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                  <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ padding: 10, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 14 }}>
+                    <option value="all">Tous types</option>
+                    <option value="income">Recettes</option>
+                    <option value="expense">Dépenses</option>
+                  </select>
+                  <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{ padding: 10, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 14 }}>
+                    <option value="all">Toutes catégories</option>
+                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
                 </div>
-                <div style={styles.summaryDivider}>-</div>
-                <div style={styles.summaryItem}>
-                  <span style={styles.summaryLabel}>Dépenses</span>
-                  <span style={{...styles.summaryValue, color: '#ef4444'}}>{totalExpense.toFixed(2)} €</span>
-                </div>
-                <div style={styles.summaryDivider}>=</div>
-                <div style={styles.summaryItem}>
-                  <span style={styles.summaryLabel}>Solde</span>
-                  <span style={{...styles.summaryValue, color: balance >= 0 ? '#10b981' : '#ef4444'}}>{balance.toFixed(2)} €</span>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={{ padding: 10, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 14 }} />
+                  <span style={{ color: theme.textMut }}>au</span>
+                  <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={{ padding: 10, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 14 }} />
+                  <button onClick={resetFilters} style={{ padding: '10px 16px', background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: 14 }}>Réinitialiser</button>
                 </div>
               </div>
 
-              <div style={styles.tableContainer}>
-                <table style={styles.table}>
+              {/* Résumé */}
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 30, padding: 20, background: theme.card, borderRadius: 12, marginBottom: 20, border: `1px solid ${theme.border}`, flexWrap: 'wrap' }}>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 12, color: theme.textSec }}>Recettes</div><div style={{ fontSize: 24, fontWeight: 700, color: '#10b981' }}>{totalIncome.toFixed(2)} €</div></div>
+                <div style={{ fontSize: 24, color: theme.textMut }}>-</div>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 12, color: theme.textSec }}>Dépenses</div><div style={{ fontSize: 24, fontWeight: 700, color: '#ef4444' }}>{totalExpense.toFixed(2)} €</div></div>
+                <div style={{ fontSize: 24, color: theme.textMut }}>=</div>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 12, color: theme.textSec }}>Solde</div><div style={{ fontSize: 24, fontWeight: 700, color: balance >= 0 ? '#10b981' : '#ef4444' }}>{balance.toFixed(2)} €</div></div>
+              </div>
+
+              {/* Table */}
+              <div style={{ background: theme.card, borderRadius: 12, border: `1px solid ${theme.border}`, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead>
                     <tr>
-                      <th style={styles.th}>Date</th>
-                      <th style={styles.th}>Type</th>
-                      <th style={styles.th}>Catégorie</th>
-                      <th style={styles.th}>Description</th>
-                      <th style={styles.th}>Montant</th>
-                      {isAdmin && <th style={styles.th}>Actions</th>}
+                      {['Date', 'Type', 'Catégorie', 'Description', 'Montant', ...(isAdmin ? ['Actions'] : [])].map(h => (
+                        <th key={h} style={{ textAlign: 'left', padding: 14, background: theme.input, fontWeight: 600, fontSize: 12, color: theme.textSec, textTransform: 'uppercase', borderBottom: `2px solid ${theme.border}` }}>{h}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {transactions.sort((a, b) => new Date(b.date) - new Date(a.date)).map(t => (
-                      <tr key={t.id} style={styles.tr}>
-                        <td style={styles.td}>{new Date(t.date).toLocaleDateString('fr-FR')}</td>
-                        <td style={styles.td}>
-                          <span style={{...styles.typeBadge, backgroundColor: t.type === 'income' ? '#dcfce7' : '#fee2e2', color: t.type === 'income' ? '#166534' : '#991b1b'}}>
-                            {t.type === 'income' ? 'Recette' : 'Dépense'}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={{...styles.categoryBadge, backgroundColor: categoryColors[t.category] || categoryColors['Autre']}}>
-                            {t.category}
-                          </span>
-                        </td>
-                        <td style={styles.td}>{t.description}</td>
-                        <td style={{...styles.td, ...styles.amountCell, color: t.type === 'income' ? '#10b981' : '#ef4444'}}>
-                          {t.type === 'income' ? '+' : '-'}{t.amount.toFixed(2)} €
-                        </td>
-                        {isAdmin && (
-                          <td style={styles.td}>
-                            <button onClick={() => { setEditingItem(t); setShowTransactionModal(true); }} style={styles.editBtn}>✏️</button>
-                            <button onClick={() => showConfirm('Supprimer cette transaction ?', () => deleteTransaction(t.id))} style={styles.deleteBtn}>🗑️</button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
+                    {filteredTransactions.map(t => {
+                      const cat = categories.find(c => c.name === t.category);
+                      return (
+                        <tr key={t.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                          <td style={{ padding: 14, color: theme.text, fontSize: 14 }}>{new Date(t.date).toLocaleDateString('fr-FR')}</td>
+                          <td style={{ padding: 14 }}><span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: t.type === 'income' ? '#dcfce7' : '#fee2e2', color: t.type === 'income' ? '#166534' : '#991b1b' }}>{t.type === 'income' ? 'Recette' : 'Dépense'}</span></td>
+                          <td style={{ padding: 14 }}><span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, color: 'white', background: cat?.color || '#6b7280' }}>{t.category}</span></td>
+                          <td style={{ padding: 14, color: theme.text, fontSize: 14 }}>{t.description}</td>
+                          <td style={{ padding: 14, fontWeight: 600, fontFamily: 'monospace', fontSize: 15, color: t.type === 'income' ? '#10b981' : '#ef4444' }}>{t.type === 'income' ? '+' : '-'}{t.amount?.toFixed(2)} €</td>
+                          {isAdmin && (
+                            <td style={{ padding: 14 }}>
+                              <button onClick={() => setModal({ type: 'transaction', data: t })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>✏️</button>
+                              <button onClick={() => showConfirm('Supprimer cette transaction ?', () => deleteTransaction(t.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>🗑️</button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-                {transactions.length === 0 && <p style={styles.emptyTableText}>Aucune transaction enregistrée</p>}
+                {filteredTransactions.length === 0 && <p style={{ color: theme.textMut, textAlign: 'center', padding: 40 }}>Aucune transaction trouvée</p>}
               </div>
             </div>
           )}
 
-          {/* Projects */}
+          {/* Projets */}
           {activeTab === 'projects' && (
             <div>
-              <div style={styles.pageHeader}>
-                <h1 style={styles.pageTitle}>Suivi des projets</h1>
-                {isAdmin && (
-                  <button onClick={() => { setEditingItem(null); setShowProjectModal(true); }} style={styles.addButton}>
-                    + Nouveau projet
-                  </button>
-                )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.text }}>Projets</h1>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
+                    <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                      style={{ padding: '10px 10px 10px 38px', borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 14 }} />
+                  </div>
+                  {isAdmin && <button onClick={() => setModal({ type: 'project', data: null })} style={{ padding: '10px 16px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Nouveau projet</button>}
+                </div>
               </div>
-
-              <div style={styles.projectsGrid}>
-                {projects.map(p => (
-                  <div key={p.id} style={styles.projectCard}>
-                    <div style={styles.projectHeader}>
-                      <span style={{...styles.projectStatus, backgroundColor: statusColors[p.status]}}>
-                        {statusLabels[p.status]}
-                      </span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
+                {filteredProjects.map(p => (
+                  <div key={p.id} style={{ background: theme.card, borderRadius: 12, padding: 20, border: `1px solid ${theme.border}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                      <span style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: 'white', background: statusColors[p.status] }}>{statusLabels[p.status]}</span>
                       {isAdmin && (
                         <div>
-                          <button onClick={() => { setEditingItem(p); setShowProjectModal(true); }} style={styles.editBtn}>✏️</button>
-                          <button onClick={() => showConfirm('Supprimer ce projet ?', () => deleteProject(p.id))} style={styles.deleteBtn}>🗑️</button>
+                          <button onClick={() => setModal({ type: 'project', data: p })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>✏️</button>
+                          <button onClick={() => showConfirm('Supprimer ce projet ?', () => deleteProject(p.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>🗑️</button>
                         </div>
                       )}
                     </div>
-                    <h3 style={styles.projectTitle}>{p.title}</h3>
-                    <p style={styles.projectDesc}>{p.description}</p>
-                    <div style={styles.projectMeta}>
+                    <h3 style={{ fontSize: 18, fontWeight: 600, color: theme.text, marginBottom: 10 }}>{p.title}</h3>
+                    <p style={{ fontSize: 14, color: theme.textSec, marginBottom: 14, lineHeight: 1.5 }}>{p.description}</p>
+                    <div style={{ display: 'flex', gap: 16, fontSize: 13, color: theme.textMut, marginBottom: 10 }}>
                       <span>👤 {p.responsible}</span>
                       {p.deadline && <span>📅 {new Date(p.deadline).toLocaleDateString('fr-FR')}</span>}
                     </div>
-                    {p.notes && <p style={styles.projectNotes}>📝 {p.notes}</p>}
+                    {p.notes && <p style={{ fontSize: 13, color: theme.primary, background: '#fef2f2', padding: 10, borderRadius: 6, fontStyle: 'italic' }}>📝 {p.notes}</p>}
                   </div>
                 ))}
               </div>
-              {projects.length === 0 && <p style={styles.emptyText}>Aucun projet enregistré</p>}
+              {filteredProjects.length === 0 && <p style={{ color: theme.textMut, textAlign: 'center', padding: 40 }}>Aucun projet trouvé</p>}
             </div>
           )}
 
-          {/* Ideas */}
+          {/* Idées */}
           {activeTab === 'ideas' && (
             <div>
-              <div style={styles.pageHeader}>
-                <h1 style={styles.pageTitle}>Boîte à idées</h1>
-                <button onClick={() => { setEditingItem(null); setShowIdeaModal(true); }} style={styles.addButton}>
-                  + Proposer une idée
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.text }}>Boîte à idées</h1>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
+                    <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                      style={{ padding: '10px 10px 10px 38px', borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 14 }} />
+                  </div>
+                  <button onClick={() => setModal({ type: 'idea', data: null })} style={{ padding: '10px 16px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Proposer une idée</button>
+                </div>
               </div>
-
-              <div style={styles.ideasGrid}>
-                {ideas.sort((a, b) => (b.votes || 0) - (a.votes || 0)).map(i => (
-                  <div key={i.id} style={styles.ideaCard}>
-                    <div style={styles.ideaHeader}>
-                      <span style={styles.ideaAuthor}>💡 {i.author}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+                {filteredIdeas.sort((a, b) => (b.votes || 0) - (a.votes || 0)).map(i => (
+                  <div key={i.id} style={{ background: theme.card, borderRadius: 12, padding: 20, border: `1px solid ${theme.border}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <span style={{ fontSize: 13, color: theme.textSec }}>💡 {i.author}</span>
                       {isAdmin && (
                         <div>
-                          <button onClick={() => { setEditingItem(i); setShowIdeaModal(true); }} style={styles.editBtn}>✏️</button>
-                          <button onClick={() => showConfirm('Supprimer cette idée ?', () => deleteIdea(i.id))} style={styles.deleteBtn}>🗑️</button>
+                          <button onClick={() => setModal({ type: 'idea', data: i })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>✏️</button>
+                          <button onClick={() => showConfirm('Supprimer cette idée ?', () => deleteIdea(i.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>🗑️</button>
                         </div>
                       )}
                     </div>
-                    <h3 style={styles.ideaTitle}>{i.title}</h3>
-                    <p style={styles.ideaDesc}>{i.description}</p>
-                    <div style={styles.ideaFooter}>
-                      <span style={styles.ideaDate}>{new Date(i.date).toLocaleDateString('fr-FR')}</span>
-                      <button onClick={() => voteIdea(i.id)} style={styles.voteButton}>
-                        ❤️ {i.votes || 0}
-                      </button>
+                    <h3 style={{ fontSize: 18, fontWeight: 600, color: theme.text, marginBottom: 10 }}>{i.title}</h3>
+                    <p style={{ fontSize: 14, color: theme.textSec, marginBottom: 14, lineHeight: 1.5 }}>{i.description}</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTop: `1px solid ${theme.border}` }}>
+                      <span style={{ fontSize: 12, color: theme.textMut }}>{new Date(i.date).toLocaleDateString('fr-FR')}</span>
+                      <button onClick={() => voteIdea(i.id)} style={{ padding: '8px 14px', background: '#fef2f2', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: theme.primary }}>❤️ {i.votes || 0}</button>
                     </div>
                   </div>
                 ))}
               </div>
-              {ideas.length === 0 && <p style={styles.emptyText}>Aucune idée proposée</p>}
+              {filteredIdeas.length === 0 && <p style={{ color: theme.textMut, textAlign: 'center', padding: 40 }}>Aucune idée trouvée</p>}
             </div>
           )}
 
-          {/* Users */}
+          {/* Utilisateurs */}
           {activeTab === 'users' && isAdmin && (
             <div>
-              <div style={styles.pageHeader}>
-                <h1 style={styles.pageTitle}>Gestion des utilisateurs</h1>
-                <button onClick={() => { setEditingItem(null); setShowUserModal(true); }} style={styles.addButton}>
-                  + Nouvel utilisateur
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.text }}>Utilisateurs</h1>
+                <button onClick={() => setModal({ type: 'user', data: null })} style={{ padding: '10px 16px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Nouvel utilisateur</button>
               </div>
-
-              <div style={styles.tableContainer}>
-                <table style={styles.table}>
+              <div style={{ background: theme.card, borderRadius: 12, border: `1px solid ${theme.border}`, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
                   <thead>
                     <tr>
-                      <th style={styles.th}>Nom</th>
-                      <th style={styles.th}>Email</th>
-                      <th style={styles.th}>Rôle</th>
-                      <th style={styles.th}>Date de création</th>
-                      <th style={styles.th}>Actions</th>
+                      {['Nom', 'Email', 'Rôle', 'Date création', 'Actions'].map(h => (
+                        <th key={h} style={{ textAlign: 'left', padding: 14, background: theme.input, fontWeight: 600, fontSize: 12, color: theme.textSec, textTransform: 'uppercase', borderBottom: `2px solid ${theme.border}` }}>{h}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {users.map(u => (
-                      <tr key={u.id} style={styles.tr}>
-                        <td style={styles.td}>{u.name}</td>
-                        <td style={styles.td}>{u.email}</td>
-                        <td style={styles.td}>
-                          <span style={{...styles.roleBadge, backgroundColor: u.role === 'admin' ? '#7c3238' : '#64748b'}}>
-                            {u.role === 'admin' ? 'Administrateur' : 'Lecteur'}
-                          </span>
-                        </td>
-                        <td style={styles.td}>{new Date(u.createdAt).toLocaleDateString('fr-FR')}</td>
-                        <td style={styles.td}>
-                          <button onClick={() => { setEditingItem(u); setShowUserModal(true); }} style={styles.editBtn}>✏️</button>
-                          <button 
-                            onClick={() => showConfirm('Supprimer cet utilisateur ?', () => deleteUser(u.id))} 
-                            style={styles.deleteBtn} 
-                            disabled={u.id === currentUser.id}
-                          >🗑️</button>
+                      <tr key={u.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                        <td style={{ padding: 14, color: theme.text }}>{u.name}</td>
+                        <td style={{ padding: 14, color: theme.text }}>{u.email}</td>
+                        <td style={{ padding: 14 }}><span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: 'white', background: u.role === 'admin' ? '#7c3238' : '#64748b' }}>{u.role === 'admin' ? 'Admin' : 'Lecteur'}</span></td>
+                        <td style={{ padding: 14, color: theme.text }}>{new Date(u.createdAt).toLocaleDateString('fr-FR')}</td>
+                        <td style={{ padding: 14 }}>
+                          <button onClick={() => setModal({ type: 'user', data: u })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>✏️</button>
+                          <button onClick={() => showConfirm('Supprimer cet utilisateur ?', () => deleteUser(u.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }} disabled={u.id === currentUser.id}>🗑️</button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* Catégories */}
+          {activeTab === 'categories' && isAdmin && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.text }}>Catégories</h1>
+                <button onClick={() => setModal({ type: 'category', data: null })} style={{ padding: '10px 16px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Nouvelle catégorie</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16 }}>
+                {categories.map(c => (
+                  <div key={c.id} style={{ background: theme.card, borderRadius: 12, padding: 16, border: `1px solid ${theme.border}`, borderLeftWidth: 4, borderLeftColor: c.color }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: 4, background: c.color }} />
+                        <span style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>{c.name}</span>
+                      </div>
+                      <div>
+                        <button onClick={() => setModal({ type: 'category', data: c })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>✏️</button>
+                        <button onClick={() => showConfirm('Supprimer cette catégorie ?', () => deleteCategory(c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.7 }}>🗑️</button>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 13, color: theme.textMut }}>{c.type === 'income' ? '📈 Recettes' : c.type === 'expense' ? '📉 Dépenses' : '📊 Les deux'}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Historique */}
+          {activeTab === 'history' && isAdmin && (
+            <div>
+              <h1 style={{ fontSize: 24, fontWeight: 700, color: theme.text, marginBottom: 20 }}>Historique des actions</h1>
+              <div style={{ background: theme.card, borderRadius: 12, border: `1px solid ${theme.border}`, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+                  <thead>
+                    <tr>
+                      {['Date/Heure', 'Utilisateur', 'Action', 'Détails'].map(h => (
+                        <th key={h} style={{ textAlign: 'left', padding: 14, background: theme.input, fontWeight: 600, fontSize: 12, color: theme.textSec, textTransform: 'uppercase', borderBottom: `2px solid ${theme.border}` }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityLog.map(log => (
+                      <tr key={log.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                        <td style={{ padding: 14, color: theme.text, fontSize: 13 }}>{new Date(log.timestamp).toLocaleString('fr-FR')}</td>
+                        <td style={{ padding: 14, color: theme.text }}>{log.userName}</td>
+                        <td style={{ padding: 14, color: theme.text }}>{log.action}</td>
+                        <td style={{ padding: 14, color: theme.textSec }}>{log.details}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {activityLog.length === 0 && <p style={{ color: theme.textMut, textAlign: 'center', padding: 40 }}>Aucune activité enregistrée</p>}
               </div>
             </div>
           )}
@@ -768,1101 +761,234 @@ export default function ChampagneSimulationApp() {
       </div>
 
       {/* Modales */}
-      {showUserModal && (
-        <Modal title={editingItem ? 'Modifier utilisateur' : 'Nouvel utilisateur'} onClose={() => { setShowUserModal(false); setEditingItem(null); }}>
-          <UserForm initialData={editingItem} onSave={saveUser} onCancel={() => { setShowUserModal(false); setEditingItem(null); }} isEditing={!!editingItem} />
-        </Modal>
+      {modal.type && (
+        <div onClick={() => setModal({ type: null, data: null })} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: theme.card, borderRadius: 16, padding: 28, width: '100%', maxWidth: 450, maxHeight: '90vh', overflowY: 'auto' }}>
+            {modal.type === 'user' && <UserForm data={modal.data} onSave={saveUser} onClose={() => setModal({ type: null, data: null })} theme={theme} />}
+            {modal.type === 'transaction' && <TransactionForm data={modal.data} onSave={saveTransaction} onClose={() => setModal({ type: null, data: null })} categories={categories} theme={theme} />}
+            {modal.type === 'project' && <ProjectForm data={modal.data} onSave={saveProject} onClose={() => setModal({ type: null, data: null })} theme={theme} />}
+            {modal.type === 'idea' && <IdeaForm data={modal.data} onSave={saveIdea} onClose={() => setModal({ type: null, data: null })} theme={theme} />}
+            {modal.type === 'category' && <CategoryForm data={modal.data} onSave={saveCategory} onClose={() => setModal({ type: null, data: null })} theme={theme} />}
+            {modal.type === 'password' && <PasswordForm onSave={updatePassword} onClose={() => setModal({ type: null, data: null })} currentPwd={currentUser.password} theme={theme} />}
+            {modal.type === 'deleteAccount' && <DeleteAccountForm onConfirm={deleteMyAccount} onClose={() => setModal({ type: null, data: null })} theme={theme} />}
+          </div>
+        </div>
       )}
 
-      {showTransactionModal && (
-        <Modal title={editingItem ? 'Modifier transaction' : 'Nouvelle transaction'} onClose={() => { setShowTransactionModal(false); setEditingItem(null); }}>
-          <TransactionForm initialData={editingItem} onSave={saveTransaction} onCancel={() => { setShowTransactionModal(false); setEditingItem(null); }} />
-        </Modal>
-      )}
-
-      {showProjectModal && (
-        <Modal title={editingItem ? 'Modifier projet' : 'Nouveau projet'} onClose={() => { setShowProjectModal(false); setEditingItem(null); }}>
-          <ProjectForm initialData={editingItem} onSave={saveProject} onCancel={() => { setShowProjectModal(false); setEditingItem(null); }} />
-        </Modal>
-      )}
-
-      {showIdeaModal && (
-        <Modal title={editingItem ? 'Modifier idée' : 'Proposer une idée'} onClose={() => { setShowIdeaModal(false); setEditingItem(null); }}>
-          <IdeaForm initialData={editingItem} onSave={saveIdea} onCancel={() => { setShowIdeaModal(false); setEditingItem(null); }} />
-        </Modal>
-      )}
-
-      {showPasswordModal && (
-        <Modal title="Modifier mon mot de passe" onClose={() => setShowPasswordModal(false)}>
-          <PasswordForm onSave={updatePassword} onCancel={() => setShowPasswordModal(false)} currentPassword={currentUser.password} />
-        </Modal>
-      )}
-
-      {showDeleteAccountModal && (
-        <Modal title="Supprimer mon compte" onClose={() => setShowDeleteAccountModal(false)}>
-          <DeleteAccountForm onConfirm={deleteMyAccount} onCancel={() => setShowDeleteAccountModal(false)} />
-        </Modal>
-      )}
-
-      {showConfirmModal && (
-        <Modal title="Confirmation" onClose={() => setShowConfirmModal(false)}>
-          <div style={styles.confirmContent}>
-            <p style={styles.confirmText}>{confirmAction?.message}</p>
-            <div style={styles.formActions}>
-              <button type="button" onClick={() => setShowConfirmModal(false)} style={styles.cancelButton}>Annuler</button>
-              <button type="button" onClick={executeConfirm} style={styles.dangerButton}>Confirmer</button>
+      {/* Confirm Modal */}
+      {confirmModal.show && (
+        <div onClick={() => setConfirmModal({ show: false, message: '', action: null })} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: theme.card, borderRadius: 16, padding: 28, width: '100%', maxWidth: 400, textAlign: 'center' }}>
+            <p style={{ fontSize: 16, color: theme.text, marginBottom: 24 }}>{confirmModal.message}</p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button onClick={() => setConfirmModal({ show: false, message: '', action: null })} style={{ padding: '12px 24px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
+              <button onClick={execConfirm} style={{ padding: '12px 24px', background: 'linear-gradient(135deg, #dc2626, #ef4444)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Confirmer</button>
             </div>
           </div>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// Composant Modal
-function Modal({ title, children, onClose }) {
-  return (
-    <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-        <div style={styles.modalHeader}>
-          <h2 style={styles.modalTitle}>{title}</h2>
-          <button onClick={onClose} style={styles.modalClose}>×</button>
         </div>
-        {children}
-      </div>
+      )}
+
+      {/* Styles responsives */}
+      <style>{`
+        @media (max-width: 768px) {
+          .mobile-menu-btn { display: block !important; }
+          .user-info-desktop { display: none !important; }
+          .sidebar { position: fixed; top: 56px; left: 0; bottom: 0; transform: translateX(-100%); z-index: 60; transition: transform 0.3s; }
+          .sidebar.open { transform: translateX(0); }
+        }
+      `}</style>
     </div>
   );
 }
 
 // Formulaires
-function UserForm({ initialData, onSave, onCancel, isEditing }) {
-  const [name, setName] = useState(initialData?.name || '');
-  const [email, setEmail] = useState(initialData?.email || '');
+function UserForm({ data, onSave, onClose, theme }) {
+  const [name, setName] = useState(data?.name || '');
+  const [email, setEmail] = useState(data?.email || '');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState(initialData?.role || 'reader');
+  const [role, setRole] = useState(data?.role || 'reader');
+  const isEdit = !!data;
 
-  const handleSubmit = () => {
-    if (isEditing) {
-      if (name && email) {
-        onSave({ name, email, role });
-      }
-    } else {
-      if (name && email && password) {
-        onSave({ name, email, password, role });
-      }
-    }
+  const submit = () => {
+    if (!name || !email || (!isEdit && !password)) return;
+    onSave(isEdit ? { name, email, role } : { name, email, password, role });
   };
 
   return (
-    <div style={styles.form}>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Nom complet</label>
-        <input type="text" value={name} onChange={e => setName(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Email</label>
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={styles.input} />
-      </div>
-      {!isEditing && (
-        <div style={styles.inputGroup}>
-          <label style={styles.label}>Mot de passe initial</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={styles.input} placeholder="Définir un mot de passe" />
-          <small style={styles.helpText}>L'utilisateur pourra le modifier après sa première connexion</small>
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{isEdit ? 'Modifier' : 'Nouvel'} utilisateur</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Nom</label><input value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        {!isEdit && <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Mot de passe</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>}
+        {isEdit && <p style={{ fontSize: 13, color: theme.textSec, background: theme.input, padding: 12, borderRadius: 8 }}>ℹ️ Seul l'utilisateur peut modifier son mot de passe</p>}
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Rôle</label><select value={role} onChange={e => setRole(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="admin">Administrateur</option><option value="reader">Lecteur</option></select></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
         </div>
-      )}
-      {isEditing && (
-        <p style={styles.infoText}>ℹ️ Seul l'utilisateur peut modifier son mot de passe depuis son compte.</p>
-      )}
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Rôle</label>
-        <select value={role} onChange={e => setRole(e.target.value)} style={styles.select}>
-          <option value="admin">Administrateur (Bureau)</option>
-          <option value="reader">Lecteur (CA)</option>
-        </select>
-      </div>
-      <div style={styles.formActions}>
-        <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
-        <button type="button" onClick={handleSubmit} style={styles.submitButton}>Enregistrer</button>
       </div>
     </div>
   );
 }
 
-function PasswordForm({ onSave, onCancel, currentPassword }) {
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+function TransactionForm({ data, onSave, onClose, categories, theme }) {
+  const [date, setDate] = useState(data?.date || new Date().toISOString().split('T')[0]);
+  const [type, setType] = useState(data?.type || 'expense');
+  const [category, setCategory] = useState(data?.category || 'Autre');
+  const [description, setDescription] = useState(data?.description || '');
+  const [amount, setAmount] = useState(data?.amount || '');
+
+  const filteredCats = categories.filter(c => c.type === 'both' || c.type === type);
+
+  const submit = () => {
+    if (!description || !amount) return;
+    onSave({ date, type, category, description, amount: parseFloat(amount) });
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Nouvelle'} transaction</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Date</label><input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Type</label><select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="income">Recette</option><option value="expense">Dépense</option></select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Catégorie</label><select value={category} onChange={e => setCategory(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}>{filteredCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Description</label><input value={description} onChange={e => setDescription(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Montant (€)</label><input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectForm({ data, onSave, onClose, theme }) {
+  const [title, setTitle] = useState(data?.title || '');
+  const [status, setStatus] = useState(data?.status || 'planning');
+  const [responsible, setResponsible] = useState(data?.responsible || '');
+  const [description, setDescription] = useState(data?.description || '');
+  const [deadline, setDeadline] = useState(data?.deadline || '');
+  const [notes, setNotes] = useState(data?.notes || '');
+
+  const submit = () => {
+    if (!title || !responsible || !description) return;
+    onSave({ title, status, responsible, description, deadline, notes });
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Nouveau'} projet</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Titre</label><input value={title} onChange={e => setTitle(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Statut</label><select value={status} onChange={e => setStatus(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="planning">En réflexion</option><option value="in_progress">En cours</option><option value="completed">Terminé</option><option value="abandoned">Abandonné</option></select></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Responsable</label><input value={responsible} onChange={e => setResponsible(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Description</label><textarea value={description} onChange={e => setDescription(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Échéance</label><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Notes</label><textarea value={notes} onChange={e => setNotes(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, minHeight: 60, resize: 'vertical', boxSizing: 'border-box' }} /></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IdeaForm({ data, onSave, onClose, theme }) {
+  const [title, setTitle] = useState(data?.title || '');
+  const [description, setDescription] = useState(data?.description || '');
+
+  const submit = () => {
+    if (!title || !description) return;
+    onSave({ title, description });
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Proposer une'} idée</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Titre</label><input value={title} onChange={e => setTitle(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Description</label><textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Décrivez votre idée..." style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, minHeight: 100, resize: 'vertical', boxSizing: 'border-box' }} /></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Proposer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CategoryForm({ data, onSave, onClose, theme }) {
+  const [name, setName] = useState(data?.name || '');
+  const [color, setColor] = useState(data?.color || '#6b7280');
+  const [type, setType] = useState(data?.type || 'both');
+  const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#6b7280', '#14b8a6', '#f97316'];
+
+  const submit = () => {
+    if (!name) return;
+    onSave({ name, color, type });
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>{data ? 'Modifier' : 'Nouvelle'} catégorie</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Nom</label><input value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Couleur</label><div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>{colors.map(c => <button key={c} onClick={() => setColor(c)} style={{ width: 32, height: 32, borderRadius: 6, background: c, border: color === c ? '3px solid white' : 'none', boxShadow: color === c ? `0 0 0 2px ${theme.primary}` : 'none', cursor: 'pointer' }} />)}</div></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Type</label><select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6 }}><option value="income">Recettes</option><option value="expense">Dépenses</option><option value="both">Les deux</option></select></div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PasswordForm({ onSave, onClose, currentPwd, theme }) {
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = () => {
-    if (oldPassword !== currentPassword) {
-      setError('Ancien mot de passe incorrect');
-      return;
-    }
-    if (newPassword.length < 6) {
-      setError('Le nouveau mot de passe doit contenir au moins 6 caractères');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('Les mots de passe ne correspondent pas');
-      return;
-    }
-    onSave(newPassword);
+  const submit = () => {
+    if (oldPwd !== currentPwd) { setError('Ancien mot de passe incorrect'); return; }
+    if (newPwd.length < 6) { setError('Min 6 caractères'); return; }
+    if (newPwd !== confirmPwd) { setError('Les mots de passe ne correspondent pas'); return; }
+    onSave(newPwd);
   };
 
   return (
-    <div style={styles.form}>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Ancien mot de passe</label>
-        <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Nouveau mot de passe</label>
-        <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Confirmer le nouveau mot de passe</label>
-        <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} style={styles.input} />
-      </div>
-      {error && <p style={styles.error}>{error}</p>}
-      <div style={styles.formActions}>
-        <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
-        <button type="button" onClick={handleSubmit} style={styles.submitButton}>Modifier</button>
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>Modifier mot de passe</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Ancien mot de passe</label><input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Nouveau mot de passe</label><input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Confirmer</label><input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+        {error && <p style={{ color: '#dc2626', margin: 0 }}>{error}</p>}
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #7c3238, #9a3c44)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Modifier</button>
+        </div>
       </div>
     </div>
   );
 }
 
-function DeleteAccountForm({ onConfirm, onCancel }) {
-  const [confirmText, setConfirmText] = useState('');
+function DeleteAccountForm({ onConfirm, onClose, theme }) {
+  const [text, setText] = useState('');
 
   return (
-    <div style={styles.form}>
-      <p style={styles.warningText}>⚠️ Cette action est irréversible. Toutes vos données seront supprimées.</p>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Tapez "SUPPRIMER" pour confirmer</label>
-        <input type="text" value={confirmText} onChange={e => setConfirmText(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.formActions}>
-        <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
-        <button type="button" onClick={onConfirm} style={styles.dangerButton} disabled={confirmText !== 'SUPPRIMER'}>Supprimer mon compte</button>
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: theme.text, marginBottom: 20 }}>Supprimer mon compte</h2>
+      <p style={{ color: '#dc2626', background: '#fef2f2', padding: 14, borderRadius: 8, marginBottom: 16 }}>⚠️ Cette action est irréversible !</p>
+      <div><label style={{ fontSize: 14, fontWeight: 600, color: theme.textSec }}>Tapez "SUPPRIMER" pour confirmer</label><input value={text} onChange={e => setText(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, marginTop: 6, boxSizing: 'border-box' }} /></div>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 20 }}>
+        <button onClick={onClose} style={{ padding: '12px 20px', background: theme.input, color: theme.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Annuler</button>
+        <button onClick={onConfirm} disabled={text !== 'SUPPRIMER'} style={{ padding: '12px 20px', background: text === 'SUPPRIMER' ? 'linear-gradient(135deg, #dc2626, #ef4444)' : '#ccc', color: 'white', border: 'none', borderRadius: 8, cursor: text === 'SUPPRIMER' ? 'pointer' : 'not-allowed', fontWeight: 600 }}>Supprimer</button>
       </div>
     </div>
   );
 }
-
-function TransactionForm({ initialData, onSave, onCancel }) {
-  const [date, setDate] = useState(initialData?.date || new Date().toISOString().split('T')[0]);
-  const [type, setType] = useState(initialData?.type || 'expense');
-  const [category, setCategory] = useState(initialData?.category || 'Autre');
-  const [description, setDescription] = useState(initialData?.description || '');
-  const [amount, setAmount] = useState(initialData?.amount || '');
-
-  const handleSubmit = () => {
-    if (description && amount) {
-      onSave({ date, type, category, description, amount: parseFloat(amount) });
-    }
-  };
-
-  return (
-    <div style={styles.form}>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Date</label>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Type</label>
-        <select value={type} onChange={e => setType(e.target.value)} style={styles.select}>
-          <option value="income">Recette</option>
-          <option value="expense">Dépense</option>
-        </select>
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Catégorie</label>
-        <select value={category} onChange={e => setCategory(e.target.value)} style={styles.select}>
-          <option value="Cotisations">Cotisations</option>
-          <option value="Dons">Dons</option>
-          <option value="Partenariats">Partenariats</option>
-          <option value="Serveurs">Serveurs</option>
-          <option value="Outils">Outils</option>
-          <option value="Événements">Événements</option>
-          <option value="Autre">Autre</option>
-        </select>
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Description</label>
-        <input type="text" value={description} onChange={e => setDescription(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Montant (€)</label>
-        <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.formActions}>
-        <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
-        <button type="button" onClick={handleSubmit} style={styles.submitButton}>Enregistrer</button>
-      </div>
-    </div>
-  );
-}
-
-function ProjectForm({ initialData, onSave, onCancel }) {
-  const [title, setTitle] = useState(initialData?.title || '');
-  const [status, setStatus] = useState(initialData?.status || 'planning');
-  const [responsible, setResponsible] = useState(initialData?.responsible || '');
-  const [description, setDescription] = useState(initialData?.description || '');
-  const [deadline, setDeadline] = useState(initialData?.deadline || '');
-  const [notes, setNotes] = useState(initialData?.notes || '');
-
-  const handleSubmit = () => {
-    if (title && responsible && description) {
-      onSave({ title, status, responsible, description, deadline, notes });
-    }
-  };
-
-  return (
-    <div style={styles.form}>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Titre du projet</label>
-        <input type="text" value={title} onChange={e => setTitle(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Statut</label>
-        <select value={status} onChange={e => setStatus(e.target.value)} style={styles.select}>
-          <option value="planning">En réflexion</option>
-          <option value="in_progress">En cours</option>
-          <option value="completed">Terminé</option>
-          <option value="abandoned">Abandonné</option>
-        </select>
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Responsable</label>
-        <input type="text" value={responsible} onChange={e => setResponsible(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Description</label>
-        <textarea value={description} onChange={e => setDescription(e.target.value)} style={styles.textarea} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Échéance</label>
-        <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Notes de suivi</label>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} style={styles.textarea} />
-      </div>
-      <div style={styles.formActions}>
-        <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
-        <button type="button" onClick={handleSubmit} style={styles.submitButton}>Enregistrer</button>
-      </div>
-    </div>
-  );
-}
-
-function IdeaForm({ initialData, onSave, onCancel }) {
-  const [title, setTitle] = useState(initialData?.title || '');
-  const [description, setDescription] = useState(initialData?.description || '');
-
-  const handleSubmit = () => {
-    if (title && description) {
-      onSave({ title, description });
-    }
-  };
-
-  return (
-    <div style={styles.form}>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Titre de l'idée</label>
-        <input type="text" value={title} onChange={e => setTitle(e.target.value)} style={styles.input} />
-      </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Description</label>
-        <textarea value={description} onChange={e => setDescription(e.target.value)} style={styles.textarea} placeholder="Décrivez votre idée en détail..." />
-      </div>
-      <div style={styles.formActions}>
-        <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
-        <button type="button" onClick={handleSubmit} style={styles.submitButton}>Proposer</button>
-      </div>
-    </div>
-  );
-}
-
-// Styles
-const styles = {
-  // Loading
-  loadingContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%)',
-    fontFamily: "'Segoe UI', system-ui, sans-serif",
-  },
-  loadingCard: {
-    textAlign: 'center',
-    color: 'white',
-  },
-  spinner: {
-    width: '50px',
-    height: '50px',
-    border: '4px solid rgba(255,255,255,0.3)',
-    borderTop: '4px solid #7c3238',
-    borderRadius: '50%',
-    margin: '0 auto 20px',
-    animation: 'spin 1s linear infinite',
-  },
-  loadingText: {
-    fontSize: '18px',
-    opacity: 0.8,
-  },
-
-  // Login
-  loginContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%)',
-    fontFamily: "'Segoe UI', system-ui, sans-serif",
-  },
-  loginCard: {
-    background: 'rgba(255,255,255,0.98)',
-    borderRadius: '20px',
-    padding: '48px',
-    width: '100%',
-    maxWidth: '420px',
-    boxShadow: '0 25px 80px rgba(0,0,0,0.4)',
-  },
-  loginLogo: {
-    textAlign: 'center',
-    marginBottom: '32px',
-  },
-  logoText: {
-    fontSize: '28px',
-    fontWeight: '800',
-    color: '#7c3238',
-    letterSpacing: '2px',
-  },
-  logoC: {
-    fontSize: '36px',
-    fontWeight: '900',
-  },
-  logoSimulation: {
-    fontSize: '18px',
-    fontWeight: '700',
-    color: '#7c3238',
-    letterSpacing: '8px',
-    marginTop: '4px',
-  },
-  loginTitle: {
-    textAlign: 'center',
-    color: '#374151',
-    fontSize: '18px',
-    fontWeight: '500',
-    marginBottom: '32px',
-  },
-  loginForm: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  label: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#4b5563',
-  },
-  input: {
-    padding: '14px 16px',
-    borderRadius: '10px',
-    border: '2px solid #e5e7eb',
-    fontSize: '15px',
-    transition: 'all 0.2s',
-    outline: 'none',
-  },
-  loginButton: {
-    marginTop: '12px',
-    padding: '16px',
-    background: 'linear-gradient(135deg, #7c3238 0%, #9a3c44 100%)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'transform 0.2s, box-shadow 0.2s',
-  },
-  error: {
-    color: '#dc2626',
-    fontSize: '14px',
-    textAlign: 'center',
-    margin: 0,
-  },
-  hint: {
-    marginTop: '24px',
-    fontSize: '12px',
-    color: '#9ca3af',
-    textAlign: 'center',
-  },
-  rgpdText: {
-    marginTop: '16px',
-    fontSize: '11px',
-    color: '#9ca3af',
-    textAlign: 'center',
-    lineHeight: '1.5',
-    padding: '12px',
-    background: '#f9fafb',
-    borderRadius: '8px',
-  },
-
-  // App Layout
-  app: {
-    minHeight: '100vh',
-    background: '#f8fafc',
-    fontFamily: "'Segoe UI', system-ui, sans-serif",
-  },
-  header: {
-    background: 'linear-gradient(135deg, #7c3238 0%, #5c2428 100%)',
-    color: 'white',
-    padding: '16px 32px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    boxShadow: '0 4px 20px rgba(124, 50, 56, 0.3)',
-  },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  headerLogo: {
-    fontSize: '20px',
-    fontWeight: '800',
-    letterSpacing: '1px',
-  },
-  headerLogoC: {
-    fontSize: '26px',
-  },
-  headerLogoSim: {
-    fontWeight: '600',
-    opacity: '0.9',
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  userInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    marginRight: '8px',
-  },
-  userName: {
-    fontWeight: '600',
-    fontSize: '15px',
-  },
-  userRole: {
-    fontSize: '12px',
-    opacity: '0.8',
-  },
-  headerButton: {
-    padding: '8px 12px',
-    background: 'rgba(255,255,255,0.15)',
-    color: 'white',
-    border: '1px solid rgba(255,255,255,0.3)',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '16px',
-    transition: 'all 0.2s',
-  },
-  headerButtonDanger: {
-    padding: '8px 12px',
-    background: 'rgba(239, 68, 68, 0.2)',
-    color: 'white',
-    border: '1px solid rgba(239, 68, 68, 0.5)',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '16px',
-    transition: 'all 0.2s',
-  },
-  logoutButton: {
-    padding: '10px 20px',
-    background: 'rgba(255,255,255,0.15)',
-    color: 'white',
-    border: '1px solid rgba(255,255,255,0.3)',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '500',
-    transition: 'all 0.2s',
-  },
-  container: {
-    display: 'flex',
-    minHeight: 'calc(100vh - 72px)',
-  },
-  sidebar: {
-    width: '260px',
-    background: 'white',
-    borderRight: '1px solid #e5e7eb',
-    padding: '24px 16px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  navButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '14px 18px',
-    background: 'transparent',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    fontSize: '15px',
-    fontWeight: '500',
-    color: '#4b5563',
-    transition: 'all 0.2s',
-    textAlign: 'left',
-  },
-  navButtonActive: {
-    background: 'linear-gradient(135deg, #7c3238 0%, #9a3c44 100%)',
-    color: 'white',
-    boxShadow: '0 4px 12px rgba(124, 50, 56, 0.3)',
-  },
-  navIcon: {
-    fontSize: '18px',
-  },
-  main: {
-    flex: 1,
-    padding: '32px',
-    overflowY: 'auto',
-  },
-
-  // Dashboard
-  dashboard: {},
-  pageTitle: {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: '28px',
-  },
-  pageHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '28px',
-  },
-  headerActions: {
-    display: 'flex',
-    gap: '12px',
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '20px',
-    marginBottom: '32px',
-  },
-  statCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-    border: '1px solid #f1f5f9',
-  },
-  statCardBalance: { borderLeft: '4px solid #7c3238' },
-  statCardIncome: { borderLeft: '4px solid #10b981' },
-  statCardExpense: { borderLeft: '4px solid #ef4444' },
-  statCardProjects: { borderLeft: '4px solid #3b82f6' },
-  statIcon: {
-    fontSize: '32px',
-  },
-  statContent: {
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  statLabel: {
-    fontSize: '13px',
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  statValue: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1f2937',
-  },
-  dashboardGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '24px',
-  },
-  dashboardCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '24px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-    border: '1px solid #f1f5f9',
-  },
-  cardTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: '20px',
-    paddingBottom: '12px',
-    borderBottom: '2px solid #f1f5f9',
-  },
-  miniList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  miniListItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '10px 12px',
-    background: '#f8fafc',
-    borderRadius: '8px',
-  },
-  miniListText: {
-    flex: 1,
-    fontSize: '14px',
-    color: '#374151',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  miniListAmount: {
-    fontWeight: '600',
-    fontSize: '14px',
-  },
-  miniListMeta: {
-    fontSize: '12px',
-    color: '#6b7280',
-  },
-  transactionBadge: {
-    width: '24px',
-    height: '24px',
-    borderRadius: '6px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'white',
-    fontWeight: '700',
-    fontSize: '14px',
-  },
-  statusDot: {
-    width: '10px',
-    height: '10px',
-    borderRadius: '50%',
-  },
-  ideaIcon: {
-    fontSize: '18px',
-  },
-  votesBadge: {
-    fontSize: '12px',
-    color: '#6b7280',
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#9ca3af',
-    fontSize: '14px',
-    padding: '20px',
-  },
-  emptyTableText: {
-    textAlign: 'center',
-    color: '#9ca3af',
-    fontSize: '14px',
-    padding: '40px',
-  },
-
-  // Tables
-  tableContainer: {
-    background: 'white',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-    border: '1px solid #f1f5f9',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-  },
-  th: {
-    textAlign: 'left',
-    padding: '16px 20px',
-    background: '#f8fafc',
-    fontWeight: '600',
-    fontSize: '13px',
-    color: '#6b7280',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    borderBottom: '2px solid #e5e7eb',
-  },
-  tr: {
-    borderBottom: '1px solid #f1f5f9',
-    transition: 'background 0.2s',
-  },
-  td: {
-    padding: '16px 20px',
-    fontSize: '14px',
-    color: '#374151',
-  },
-  amountCell: {
-    fontWeight: '600',
-    fontFamily: 'monospace',
-    fontSize: '15px',
-  },
-  typeBadge: {
-    padding: '4px 10px',
-    borderRadius: '6px',
-    fontSize: '12px',
-    fontWeight: '600',
-  },
-  categoryBadge: {
-    padding: '4px 10px',
-    borderRadius: '6px',
-    fontSize: '12px',
-    fontWeight: '500',
-    color: 'white',
-  },
-  roleBadge: {
-    padding: '4px 12px',
-    borderRadius: '6px',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: 'white',
-  },
-  editBtn: {
-    padding: '6px 10px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '16px',
-    opacity: '0.7',
-    transition: 'opacity 0.2s',
-  },
-  deleteBtn: {
-    padding: '6px 10px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '16px',
-    opacity: '0.7',
-    transition: 'opacity 0.2s',
-  },
-  addButton: {
-    padding: '12px 24px',
-    background: 'linear-gradient(135deg, #7c3238 0%, #9a3c44 100%)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    boxShadow: '0 4px 12px rgba(124, 50, 56, 0.3)',
-    transition: 'transform 0.2s',
-  },
-  exportButton: {
-    padding: '12px 24px',
-    background: '#f1f5f9',
-    color: '#374151',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-
-  // Finances
-  financesSummary: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '32px',
-    padding: '28px',
-    background: 'white',
-    borderRadius: '16px',
-    marginBottom: '24px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-  },
-  summaryItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '4px',
-  },
-  summaryLabel: {
-    fontSize: '13px',
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  summaryValue: {
-    fontSize: '28px',
-    fontWeight: '700',
-  },
-  summaryDivider: {
-    fontSize: '24px',
-    color: '#d1d5db',
-    fontWeight: '300',
-  },
-
-  // Projects
-  projectsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-    gap: '24px',
-  },
-  projectCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '24px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-    border: '1px solid #f1f5f9',
-  },
-  projectHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '16px',
-  },
-  projectStatus: {
-    padding: '6px 12px',
-    borderRadius: '8px',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: 'white',
-  },
-  projectTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: '12px',
-  },
-  projectDesc: {
-    fontSize: '14px',
-    color: '#6b7280',
-    lineHeight: '1.6',
-    marginBottom: '16px',
-  },
-  projectMeta: {
-    display: 'flex',
-    gap: '20px',
-    fontSize: '13px',
-    color: '#6b7280',
-    marginBottom: '12px',
-  },
-  projectNotes: {
-    fontSize: '13px',
-    color: '#7c3238',
-    background: '#fef2f2',
-    padding: '12px',
-    borderRadius: '8px',
-    fontStyle: 'italic',
-  },
-
-  // Ideas
-  ideasGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-    gap: '24px',
-  },
-  ideaCard: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '24px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-    border: '1px solid #f1f5f9',
-  },
-  ideaHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-  },
-  ideaAuthor: {
-    fontSize: '13px',
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  ideaTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: '12px',
-  },
-  ideaDesc: {
-    fontSize: '14px',
-    color: '#6b7280',
-    lineHeight: '1.6',
-    marginBottom: '16px',
-  },
-  ideaFooter: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: '12px',
-    borderTop: '1px solid #f1f5f9',
-  },
-  ideaDate: {
-    fontSize: '12px',
-    color: '#9ca3af',
-  },
-  voteButton: {
-    padding: '8px 16px',
-    background: '#fef2f2',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#7c3238',
-    transition: 'all 0.2s',
-  },
-
-  // Modal
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  modalContent: {
-    background: 'white',
-    borderRadius: '20px',
-    padding: '32px',
-    width: '100%',
-    maxWidth: '480px',
-    maxHeight: '90vh',
-    overflowY: 'auto',
-    boxShadow: '0 25px 80px rgba(0,0,0,0.3)',
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '24px',
-    paddingBottom: '16px',
-    borderBottom: '2px solid #f1f5f9',
-  },
-  modalTitle: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  modalClose: {
-    width: '36px',
-    height: '36px',
-    background: '#f1f5f9',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '24px',
-    color: '#6b7280',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-  },
-  select: {
-    padding: '14px 16px',
-    borderRadius: '10px',
-    border: '2px solid #e5e7eb',
-    fontSize: '15px',
-    outline: 'none',
-    background: 'white',
-  },
-  textarea: {
-    padding: '14px 16px',
-    borderRadius: '10px',
-    border: '2px solid #e5e7eb',
-    fontSize: '15px',
-    outline: 'none',
-    resize: 'vertical',
-    minHeight: '100px',
-    fontFamily: 'inherit',
-  },
-  formActions: {
-    display: 'flex',
-    gap: '12px',
-    justifyContent: 'flex-end',
-    marginTop: '12px',
-  },
-  cancelButton: {
-    padding: '12px 24px',
-    background: '#f1f5f9',
-    color: '#4b5563',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  submitButton: {
-    padding: '12px 24px',
-    background: 'linear-gradient(135deg, #7c3238 0%, #9a3c44 100%)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  dangerButton: {
-    padding: '12px 24px',
-    background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  helpText: {
-    fontSize: '12px',
-    color: '#9ca3af',
-    marginTop: '4px',
-  },
-  infoText: {
-    fontSize: '13px',
-    color: '#6b7280',
-    background: '#f0f9ff',
-    padding: '12px',
-    borderRadius: '8px',
-    margin: 0,
-  },
-  warningText: {
-    fontSize: '14px',
-    color: '#dc2626',
-    background: '#fef2f2',
-    padding: '16px',
-    borderRadius: '8px',
-    margin: 0,
-    lineHeight: '1.5',
-  },
-  confirmContent: {
-    textAlign: 'center',
-  },
-  confirmText: {
-    fontSize: '16px',
-    color: '#374151',
-    marginBottom: '24px',
-  },
-};
