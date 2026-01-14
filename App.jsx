@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDocs, addDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, doc, getDocs, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 // Configuration Firebase
 const firebaseConfig = {
@@ -41,6 +41,9 @@ const categoryColors = {
   'Autre': '#6b7280'
 };
 
+// Timeout d'inactivité (30 minutes)
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
+
 export default function ChampagneSimulationApp() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -50,12 +53,17 @@ export default function ChampagneSimulationApp() {
   const [projects, setProjects] = useState([]);
   const [ideas, setIdeas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [lastActivity, setLastActivity] = useState(Date.now());
   
   // États des modales
   const [showUserModal, setShowUserModal] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showIdeaModal, setShowIdeaModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   
   // Login
@@ -65,15 +73,37 @@ export default function ChampagneSimulationApp() {
 
   const isAdmin = currentUser?.role === 'admin';
 
+  // Gestion de l'inactivité
+  const updateActivity = useCallback(() => {
+    setLastActivity(Date.now());
+  }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach(event => window.addEventListener(event, updateActivity));
+
+    const checkInactivity = setInterval(() => {
+      if (Date.now() - lastActivity > INACTIVITY_TIMEOUT) {
+        handleLogout();
+        alert('Vous avez été déconnecté pour inactivité.');
+      }
+    }, 60000); // Vérifier chaque minute
+
+    return () => {
+      events.forEach(event => window.removeEventListener(event, updateActivity));
+      clearInterval(checkInactivity);
+    };
+  }, [isLoggedIn, lastActivity, updateActivity]);
+
   // Charger les données depuis Firebase
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Charger les utilisateurs
         const usersSnapshot = await getDocs(collection(db, 'users'));
         const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         
-        // Si aucun utilisateur, créer l'admin par défaut
         if (usersData.length === 0) {
           const defaultAdmin = {
             name: 'Administrateur',
@@ -87,15 +117,12 @@ export default function ChampagneSimulationApp() {
         }
         setUsers(usersData);
 
-        // Charger les transactions
         const transactionsSnapshot = await getDocs(collection(db, 'transactions'));
         setTransactions(transactionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-        // Charger les projets
         const projectsSnapshot = await getDocs(collection(db, 'projects'));
         setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-        // Charger les idées
         const ideasSnapshot = await getDocs(collection(db, 'ideas'));
         setIdeas(ideasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
@@ -115,6 +142,7 @@ export default function ChampagneSimulationApp() {
       setCurrentUser(user);
       setIsLoggedIn(true);
       setLoginError('');
+      setLastActivity(Date.now());
     } else {
       setLoginError('Email ou mot de passe incorrect');
     }
@@ -132,15 +160,40 @@ export default function ChampagneSimulationApp() {
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
   const balance = totalIncome - totalExpense;
 
-  // Stats projets
   const projectsInProgress = projects.filter(p => p.status === 'in_progress').length;
+
+  // Fonction de confirmation
+  const showConfirm = (message, action) => {
+    setConfirmAction({ message, action });
+    setShowConfirmModal(true);
+  };
+
+  const executeConfirm = () => {
+    if (confirmAction?.action) {
+      confirmAction.action();
+    }
+    setShowConfirmModal(false);
+    setConfirmAction(null);
+  };
 
   // CRUD Functions avec Firebase
   const saveUser = async (userData) => {
     try {
+      // Vérifier les doublons d'email
+      const existingUser = users.find(u => 
+        u.email.toLowerCase() === userData.email.toLowerCase() && 
+        (!editingItem || u.id !== editingItem.id)
+      );
+      if (existingUser) {
+        alert('Cet email est déjà utilisé par un autre utilisateur.');
+        return;
+      }
+
       if (editingItem) {
-        await updateDoc(doc(db, 'users', editingItem.id), userData);
-        setUsers(users.map(u => u.id === editingItem.id ? { ...userData, id: editingItem.id } : u));
+        // Ne pas modifier le mot de passe depuis ce formulaire
+        const updateData = { name: userData.name, email: userData.email, role: userData.role };
+        await updateDoc(doc(db, 'users', editingItem.id), updateData);
+        setUsers(users.map(u => u.id === editingItem.id ? { ...u, ...updateData } : u));
       } else {
         const newUser = { ...userData, createdAt: new Date().toISOString().split('T')[0] };
         const docRef = await addDoc(collection(db, 'users'), newUser);
@@ -153,10 +206,33 @@ export default function ChampagneSimulationApp() {
     }
   };
 
+  const updatePassword = async (newPassword) => {
+    try {
+      await updateDoc(doc(db, 'users', currentUser.id), { password: newPassword });
+      setUsers(users.map(u => u.id === currentUser.id ? { ...u, password: newPassword } : u));
+      setCurrentUser({ ...currentUser, password: newPassword });
+      setShowPasswordModal(false);
+      alert('Mot de passe modifié avec succès !');
+    } catch (error) {
+      console.error('Erreur lors de la modification du mot de passe:', error);
+    }
+  };
+
   const deleteUser = async (id) => {
     try {
       await deleteDoc(doc(db, 'users', id));
       setUsers(users.filter(u => u.id !== id));
+    } catch (error) {
+      console.error('Erreur lors de la suppression:', error);
+    }
+  };
+
+  const deleteMyAccount = async () => {
+    try {
+      await deleteDoc(doc(db, 'users', currentUser.id));
+      setUsers(users.filter(u => u.id !== currentUser.id));
+      handleLogout();
+      alert('Votre compte a été supprimé.');
     } catch (error) {
       console.error('Erreur lors de la suppression:', error);
     }
@@ -254,6 +330,30 @@ export default function ChampagneSimulationApp() {
     }
   };
 
+  // Export CSV
+  const exportTransactionsCSV = () => {
+    const headers = ['Date', 'Type', 'Catégorie', 'Description', 'Montant'];
+    const rows = transactions
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .map(t => [
+        new Date(t.date).toLocaleDateString('fr-FR'),
+        t.type === 'income' ? 'Recette' : 'Dépense',
+        t.category,
+        t.description,
+        (t.type === 'income' ? '+' : '-') + t.amount.toFixed(2) + ' €'
+      ]);
+    
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(';'))
+      .join('\n');
+    
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `transactions_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
   // Écran de chargement
   if (loading) {
     return (
@@ -305,6 +405,10 @@ export default function ChampagneSimulationApp() {
             <button type="button" onClick={handleLogin} style={styles.loginButton}>Se connecter</button>
           </div>
           <p style={styles.hint}>Contactez un administrateur pour obtenir vos accès</p>
+          <p style={styles.rgpdText}>
+            En vous connectant, vous acceptez que vos données (nom, email) soient stockées 
+            pour la gestion interne de l'association Champagne Simulation.
+          </p>
         </div>
       </div>
     );
@@ -325,6 +429,8 @@ export default function ChampagneSimulationApp() {
             <span style={styles.userName}>{currentUser.name}</span>
             <span style={styles.userRole}>{currentUser.role === 'admin' ? 'Administrateur' : 'Lecteur'}</span>
           </div>
+          <button onClick={() => setShowPasswordModal(true)} style={styles.headerButton} title="Modifier mon mot de passe">🔑</button>
+          <button onClick={() => setShowDeleteAccountModal(true)} style={styles.headerButtonDanger} title="Supprimer mon compte">🗑️</button>
           <button onClick={handleLogout} style={styles.logoutButton}>Déconnexion</button>
         </div>
       </header>
@@ -460,11 +566,16 @@ export default function ChampagneSimulationApp() {
             <div>
               <div style={styles.pageHeader}>
                 <h1 style={styles.pageTitle}>Gestion des finances</h1>
-                {isAdmin && (
-                  <button onClick={() => { setEditingItem(null); setShowTransactionModal(true); }} style={styles.addButton}>
-                    + Nouvelle transaction
+                <div style={styles.headerActions}>
+                  <button onClick={exportTransactionsCSV} style={styles.exportButton}>
+                    📥 Exporter CSV
                   </button>
-                )}
+                  {isAdmin && (
+                    <button onClick={() => { setEditingItem(null); setShowTransactionModal(true); }} style={styles.addButton}>
+                      + Nouvelle transaction
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div style={styles.financesSummary}>
@@ -517,7 +628,7 @@ export default function ChampagneSimulationApp() {
                         {isAdmin && (
                           <td style={styles.td}>
                             <button onClick={() => { setEditingItem(t); setShowTransactionModal(true); }} style={styles.editBtn}>✏️</button>
-                            <button onClick={() => deleteTransaction(t.id)} style={styles.deleteBtn}>🗑️</button>
+                            <button onClick={() => showConfirm('Supprimer cette transaction ?', () => deleteTransaction(t.id))} style={styles.deleteBtn}>🗑️</button>
                           </td>
                         )}
                       </tr>
@@ -551,7 +662,7 @@ export default function ChampagneSimulationApp() {
                       {isAdmin && (
                         <div>
                           <button onClick={() => { setEditingItem(p); setShowProjectModal(true); }} style={styles.editBtn}>✏️</button>
-                          <button onClick={() => deleteProject(p.id)} style={styles.deleteBtn}>🗑️</button>
+                          <button onClick={() => showConfirm('Supprimer ce projet ?', () => deleteProject(p.id))} style={styles.deleteBtn}>🗑️</button>
                         </div>
                       )}
                     </div>
@@ -587,7 +698,7 @@ export default function ChampagneSimulationApp() {
                       {isAdmin && (
                         <div>
                           <button onClick={() => { setEditingItem(i); setShowIdeaModal(true); }} style={styles.editBtn}>✏️</button>
-                          <button onClick={() => deleteIdea(i.id)} style={styles.deleteBtn}>🗑️</button>
+                          <button onClick={() => showConfirm('Supprimer cette idée ?', () => deleteIdea(i.id))} style={styles.deleteBtn}>🗑️</button>
                         </div>
                       )}
                     </div>
@@ -640,7 +751,11 @@ export default function ChampagneSimulationApp() {
                         <td style={styles.td}>{new Date(u.createdAt).toLocaleDateString('fr-FR')}</td>
                         <td style={styles.td}>
                           <button onClick={() => { setEditingItem(u); setShowUserModal(true); }} style={styles.editBtn}>✏️</button>
-                          <button onClick={() => deleteUser(u.id)} style={styles.deleteBtn} disabled={u.id === currentUser.id}>🗑️</button>
+                          <button 
+                            onClick={() => showConfirm('Supprimer cet utilisateur ?', () => deleteUser(u.id))} 
+                            style={styles.deleteBtn} 
+                            disabled={u.id === currentUser.id}
+                          >🗑️</button>
                         </td>
                       </tr>
                     ))}
@@ -655,7 +770,7 @@ export default function ChampagneSimulationApp() {
       {/* Modales */}
       {showUserModal && (
         <Modal title={editingItem ? 'Modifier utilisateur' : 'Nouvel utilisateur'} onClose={() => { setShowUserModal(false); setEditingItem(null); }}>
-          <UserForm initialData={editingItem} onSave={saveUser} onCancel={() => { setShowUserModal(false); setEditingItem(null); }} />
+          <UserForm initialData={editingItem} onSave={saveUser} onCancel={() => { setShowUserModal(false); setEditingItem(null); }} isEditing={!!editingItem} />
         </Modal>
       )}
 
@@ -674,6 +789,30 @@ export default function ChampagneSimulationApp() {
       {showIdeaModal && (
         <Modal title={editingItem ? 'Modifier idée' : 'Proposer une idée'} onClose={() => { setShowIdeaModal(false); setEditingItem(null); }}>
           <IdeaForm initialData={editingItem} onSave={saveIdea} onCancel={() => { setShowIdeaModal(false); setEditingItem(null); }} />
+        </Modal>
+      )}
+
+      {showPasswordModal && (
+        <Modal title="Modifier mon mot de passe" onClose={() => setShowPasswordModal(false)}>
+          <PasswordForm onSave={updatePassword} onCancel={() => setShowPasswordModal(false)} currentPassword={currentUser.password} />
+        </Modal>
+      )}
+
+      {showDeleteAccountModal && (
+        <Modal title="Supprimer mon compte" onClose={() => setShowDeleteAccountModal(false)}>
+          <DeleteAccountForm onConfirm={deleteMyAccount} onCancel={() => setShowDeleteAccountModal(false)} />
+        </Modal>
+      )}
+
+      {showConfirmModal && (
+        <Modal title="Confirmation" onClose={() => setShowConfirmModal(false)}>
+          <div style={styles.confirmContent}>
+            <p style={styles.confirmText}>{confirmAction?.message}</p>
+            <div style={styles.formActions}>
+              <button type="button" onClick={() => setShowConfirmModal(false)} style={styles.cancelButton}>Annuler</button>
+              <button type="button" onClick={executeConfirm} style={styles.dangerButton}>Confirmer</button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>
@@ -696,15 +835,21 @@ function Modal({ title, children, onClose }) {
 }
 
 // Formulaires
-function UserForm({ initialData, onSave, onCancel }) {
+function UserForm({ initialData, onSave, onCancel, isEditing }) {
   const [name, setName] = useState(initialData?.name || '');
   const [email, setEmail] = useState(initialData?.email || '');
-  const [password, setPassword] = useState(initialData?.password || '');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState(initialData?.role || 'reader');
 
   const handleSubmit = () => {
-    if (name && email && password) {
-      onSave({ name, email, password, role });
+    if (isEditing) {
+      if (name && email) {
+        onSave({ name, email, role });
+      }
+    } else {
+      if (name && email && password) {
+        onSave({ name, email, password, role });
+      }
     }
   };
 
@@ -718,10 +863,16 @@ function UserForm({ initialData, onSave, onCancel }) {
         <label style={styles.label}>Email</label>
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={styles.input} />
       </div>
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>Mot de passe</label>
-        <input type="text" value={password} onChange={e => setPassword(e.target.value)} style={styles.input} placeholder="Définir un mot de passe" />
-      </div>
+      {!isEditing && (
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>Mot de passe initial</label>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={styles.input} placeholder="Définir un mot de passe" />
+          <small style={styles.helpText}>L'utilisateur pourra le modifier après sa première connexion</small>
+        </div>
+      )}
+      {isEditing && (
+        <p style={styles.infoText}>ℹ️ Seul l'utilisateur peut modifier son mot de passe depuis son compte.</p>
+      )}
       <div style={styles.inputGroup}>
         <label style={styles.label}>Rôle</label>
         <select value={role} onChange={e => setRole(e.target.value)} style={styles.select}>
@@ -732,6 +883,69 @@ function UserForm({ initialData, onSave, onCancel }) {
       <div style={styles.formActions}>
         <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
         <button type="button" onClick={handleSubmit} style={styles.submitButton}>Enregistrer</button>
+      </div>
+    </div>
+  );
+}
+
+function PasswordForm({ onSave, onCancel, currentPassword }) {
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = () => {
+    if (oldPassword !== currentPassword) {
+      setError('Ancien mot de passe incorrect');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('Le nouveau mot de passe doit contenir au moins 6 caractères');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Les mots de passe ne correspondent pas');
+      return;
+    }
+    onSave(newPassword);
+  };
+
+  return (
+    <div style={styles.form}>
+      <div style={styles.inputGroup}>
+        <label style={styles.label}>Ancien mot de passe</label>
+        <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} style={styles.input} />
+      </div>
+      <div style={styles.inputGroup}>
+        <label style={styles.label}>Nouveau mot de passe</label>
+        <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={styles.input} />
+      </div>
+      <div style={styles.inputGroup}>
+        <label style={styles.label}>Confirmer le nouveau mot de passe</label>
+        <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} style={styles.input} />
+      </div>
+      {error && <p style={styles.error}>{error}</p>}
+      <div style={styles.formActions}>
+        <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
+        <button type="button" onClick={handleSubmit} style={styles.submitButton}>Modifier</button>
+      </div>
+    </div>
+  );
+}
+
+function DeleteAccountForm({ onConfirm, onCancel }) {
+  const [confirmText, setConfirmText] = useState('');
+
+  return (
+    <div style={styles.form}>
+      <p style={styles.warningText}>⚠️ Cette action est irréversible. Toutes vos données seront supprimées.</p>
+      <div style={styles.inputGroup}>
+        <label style={styles.label}>Tapez "SUPPRIMER" pour confirmer</label>
+        <input type="text" value={confirmText} onChange={e => setConfirmText(e.target.value)} style={styles.input} />
+      </div>
+      <div style={styles.formActions}>
+        <button type="button" onClick={onCancel} style={styles.cancelButton}>Annuler</button>
+        <button type="button" onClick={onConfirm} style={styles.dangerButton} disabled={confirmText !== 'SUPPRIMER'}>Supprimer mon compte</button>
       </div>
     </div>
   );
@@ -993,6 +1207,16 @@ const styles = {
     color: '#9ca3af',
     textAlign: 'center',
   },
+  rgpdText: {
+    marginTop: '16px',
+    fontSize: '11px',
+    color: '#9ca3af',
+    textAlign: 'center',
+    lineHeight: '1.5',
+    padding: '12px',
+    background: '#f9fafb',
+    borderRadius: '8px',
+  },
 
   // App Layout
   app: {
@@ -1029,12 +1253,13 @@ const styles = {
   headerRight: {
     display: 'flex',
     alignItems: 'center',
-    gap: '24px',
+    gap: '16px',
   },
   userInfo: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-end',
+    marginRight: '8px',
   },
   userName: {
     fontWeight: '600',
@@ -1043,6 +1268,26 @@ const styles = {
   userRole: {
     fontSize: '12px',
     opacity: '0.8',
+  },
+  headerButton: {
+    padding: '8px 12px',
+    background: 'rgba(255,255,255,0.15)',
+    color: 'white',
+    border: '1px solid rgba(255,255,255,0.3)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    transition: 'all 0.2s',
+  },
+  headerButtonDanger: {
+    padding: '8px 12px',
+    background: 'rgba(239, 68, 68, 0.2)',
+    color: 'white',
+    border: '1px solid rgba(239, 68, 68, 0.5)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    transition: 'all 0.2s',
   },
   logoutButton: {
     padding: '10px 20px',
@@ -1110,6 +1355,10 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '28px',
+  },
+  headerActions: {
+    display: 'flex',
+    gap: '12px',
   },
   statsGrid: {
     display: 'grid',
@@ -1319,6 +1568,17 @@ const styles = {
     cursor: 'pointer',
     boxShadow: '0 4px 12px rgba(124, 50, 56, 0.3)',
     transition: 'transform 0.2s',
+  },
+  exportButton: {
+    padding: '12px 24px',
+    background: '#f1f5f9',
+    color: '#374151',
+    border: 'none',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
   },
 
   // Finances
@@ -1564,5 +1824,45 @@ const styles = {
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
+  },
+  dangerButton: {
+    padding: '12px 24px',
+    background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  helpText: {
+    fontSize: '12px',
+    color: '#9ca3af',
+    marginTop: '4px',
+  },
+  infoText: {
+    fontSize: '13px',
+    color: '#6b7280',
+    background: '#f0f9ff',
+    padding: '12px',
+    borderRadius: '8px',
+    margin: 0,
+  },
+  warningText: {
+    fontSize: '14px',
+    color: '#dc2626',
+    background: '#fef2f2',
+    padding: '16px',
+    borderRadius: '8px',
+    margin: 0,
+    lineHeight: '1.5',
+  },
+  confirmContent: {
+    textAlign: 'center',
+  },
+  confirmText: {
+    fontSize: '16px',
+    color: '#374151',
+    marginBottom: '24px',
   },
 };
